@@ -1,7 +1,7 @@
 import AppKit
 import CoreGraphics
 
-/// `CGEventTap` のライフサイクル管理（SPEC §11.1 / PLAN §3.2）。
+/// `CGEventTap` のライフサイクル管理（SPEC §2.2 / §11.1）。
 ///
 /// listen-only タップでキーとマウスの押下を監視し、`ShiftChordDetector` に流す。
 final class EventTapController {
@@ -16,7 +16,7 @@ final class EventTapController {
     private var tapUserInfo: Unmanaged<EventTapController>?
     private let detector = ShiftChordDetector()
 
-    // PLAN §3.3: 左右 Shift はデバイス依存ビットで判別する
+    // SPEC §2.2: 左右 Shift はデバイス依存ビットで判別する
     private static let leftShiftBit: UInt64 = 0x0000_0002
     private static let rightShiftBit: UInt64 = 0x0000_0004
     private static let leftShiftKeyCode: Int64 = 56
@@ -85,7 +85,7 @@ final class EventTapController {
     private func handle(type: CGEventType, event: CGEvent) {
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
-            // PLAN §3.2: システムに無効化されたら再有効化する。
+            // SPEC §2.2: システムに無効化されたら再有効化する。
             // これを忘れると「ある日突然ホットキーが効かなくなる」
             if let tap {
                 CGEvent.tapEnable(tap: tap, enable: true)

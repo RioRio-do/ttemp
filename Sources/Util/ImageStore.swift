@@ -7,7 +7,7 @@ import UniformTypeIdentifiers
 /// 原本のバイト列を必ず保持し（「元の形式のまま保存」「画像をコピー」で劣化させないため）、
 /// 表示用の `NSImage` は必要に応じて縮小して別に作る。
 final class ImageStore {
-    /// 表示用ダウンサンプリングの閾値（SPEC §6.4 の未決事項に対する決定）。
+    /// 表示用ダウンサンプリングの閾値（SPEC §6.4）。
     /// 4K ディスプレイの物理ピクセルを十分に上回るため、これ以上の解像度は表示に寄与しない。
     static let displayMaxPixelSize: CGFloat = 4096
 

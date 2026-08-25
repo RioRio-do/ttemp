@@ -1,6 +1,6 @@
 import AppKit
 
-/// `NSApp.mainMenu` の組み立て（PLAN §3.1）。
+/// `NSApp.mainMenu` の組み立て（SPEC §8.4）。
 ///
 /// `LSUIElement` のアプリはメニューバーに自前のメニューを表示しないが、
 /// mainMenu を設定しておかないと `⌘V` や `⌘Z` すら `performKeyEquivalent` を通らず、

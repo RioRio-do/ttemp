@@ -19,7 +19,7 @@ final class StatusItemController: NSObject {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
 
-        // PLAN §3.6: statusItem.menu を設定すると左クリックでもメニューが開いてしまう
+        // SPEC §8.3: statusItem.menu を設定すると左クリックでもメニューが開いてしまう
         if let button = statusItem.button {
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
             button.target = self
@@ -127,7 +127,7 @@ final class StatusItemController: NSObject {
                      action: #selector(quit), keyEquivalent: "")
             .target = self
 
-        // PLAN §3.6: 表示直後に menu を外して左クリック分岐を保つ
+        // SPEC §8.3: 表示直後に menu を外して左クリック分岐を保つ
         statusItem.menu = menu
         statusItem.button?.performClick(nil)
         statusItem.menu = nil

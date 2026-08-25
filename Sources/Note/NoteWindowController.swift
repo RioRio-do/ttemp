@@ -493,7 +493,7 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
         case .image(let pasteboardData, let ext):
             loadData = { (pasteboardData, ext) }
         case .imageFile(let url):
-            // PLAN §3.7: ファイルのバイト列をそのまま読む（NSImage 経由にすると原本が失われる）
+            // SPEC §6.3: ファイルのバイト列をそのまま読む（NSImage 経由にすると原本が失われる）
             loadData = { (try Data(contentsOf: url, options: .mappedIfSafe), url.pathExtension) }
         default:
             return false
