@@ -1,27 +1,30 @@
 # Ttemp
 
-左右の Shift キーを同時に押すと、どこからでも一時メモが開く macOS メニューバー常駐アプリ。
+[English](README.en.md)
 
-Press both Shift keys to open a scratch note from anywhere. A tiny macOS menu bar app.
+左右 Shift で、一時メモ。
 
-- 閉じると内容は自動でクリップボードへ（Close a note and its content lands on the clipboard）
-- プレーンテキストと画像のみ、装飾なし（Plain text and images only）
-- 日本語 / English（設定または初回起動時に選択）
-
-## 必要環境
-
-- macOS 14.0 以降
-- ビルドには Xcode と [XcodeGen](https://github.com/yonaskolb/XcodeGen)（`brew install xcodegen`）
+- 閉じるとクリップボードへコピー
+- テキストと画像に対応
+- 再起動後も復元
+- 日本語 / English
 
 ## インストール
 
-[最新の Ttemp.dmg](https://github.com/RioRio-do/ttemp/releases/latest/download/Ttemp.dmg) を開き、
-Ttemp.app を Applications へドラッグする。配布用の Release 版は Applications 外から
-起動すると、Finder で現在の場所を表示して終了する。
+[Ttemp.dmgをダウンロード](https://github.com/RioRio-do/ttemp/releases/latest/download/Ttemp.dmg)し、
+TtempをApplicationsへドラッグする。
 
-自己署名アプリのため、初回だけ macOS に止められた場合は Applications 内の Ttemp を
-右クリックして「開く」を選ぶ。GitHub Release の `Ttemp.zip` は Sparkle 自動更新用で、
-初回インストールには `Ttemp.dmg` を使う。
+自己署名のため、macOSに止められた場合はApplications内のTtempを右クリックして「開く」。
+
+## 入力監視
+
+左右Shiftの判定だけに使います。入力監視で得たイベントは保存・送信しません。
+ノートは端末内にのみ保存されます。許可しなくてもメニューバーから使えます。
+
+## 必要環境
+
+- macOS 14以降
+- ビルド: Xcode、[XcodeGen](https://github.com/yonaskolb/XcodeGen)
 
 ## ビルド
 
@@ -32,23 +35,10 @@ xcodebuild -project Ttemp.xcodeproj -scheme Ttemp -configuration Release build
 
 ## リリース
 
-main へ push するだけ。CI（GitHub Actions）がテスト → バージョン採番 →
-署名 → DMG/ZIP/appcast 生成 → GitHub Release 作成まで全自動で行う。鍵のセットアップ（一度だけ）や
-仕組みの詳細は [docs/SIGNING.md](docs/SIGNING.md) を参照。
-
-## テスト
-
-```bash
-xcodebuild -project Ttemp.xcodeproj -scheme TtempTests -destination 'platform=macOS' test
-```
-
-## 権限について
-
-左右 Shift の同時押し検知に macOS の「入力監視」権限を使う。キー押下の検知のみで、
-入力内容の記録・送信は一切しない。許可しなくても、メニューバーアイコンから
-「新規ウィンドウ」で使える。
+mainへのpushで、CIがテスト、署名、DMG/ZIP/appcast生成、GitHub Release作成まで行います。
+鍵の準備と検証手順は[docs/SIGNING.md](docs/SIGNING.md)を参照してください。
 
 ## ドキュメント
 
-- [SPEC.md](SPEC.md) — 仕様（このアプリの唯一の仕様書。コードのコメントは §番号で参照する）
-- [docs/SIGNING.md](docs/SIGNING.md) — 自己署名による安定署名、Sparkle 2 の自動更新とリリース手順
+- [SPEC.md](SPEC.md) — 仕様
+- [docs/SIGNING.md](docs/SIGNING.md) — 署名・更新・リリース

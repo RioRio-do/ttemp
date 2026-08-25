@@ -30,9 +30,9 @@ final class OnboardingWindowController: NSObject {
     }
 
     private func makeWindow() -> NSWindow {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 340),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 280),
                               // 初回説明を閉じるボタンだけで完了扱いにすると、既定 ON の
-                              // ログイン項目も権限要求も適用されない。明示的な「はじめる」で完了する。
+                              // ログイン項目も権限要求も適用されない。明示的な「続ける」で完了する。
                               styleMask: [.titled],
                               backing: .buffered,
                               defer: false)
@@ -43,7 +43,7 @@ final class OnboardingWindowController: NSObject {
 
     /// 文言を含むビュー階層を組む。言語切替時はここを呼び直して丸ごと差し替える
     private func applyContent(to window: NSWindow) {
-        window.title = L10n.pick("Ttemp へようこそ", "Welcome to Ttemp")
+        window.title = "Ttemp"
 
         // 表示言語（初期値は OS の言語）
         let popUp = NSPopUpButton()
@@ -51,57 +51,50 @@ final class OnboardingWindowController: NSObject {
         popUp.selectItem(at: AppLanguage.allCases.firstIndex(of: L10n.current) ?? 0)
         popUp.target = self
         popUp.action = #selector(languageChanged)
+        popUp.setAccessibilityLabel(L10n.pick("言語", "Language"))
         languagePopUp = popUp
-        let languageRow = NSStackView(views: [NSTextField(labelWithString: L10n.pick("言語:", "Language:")),
+        let languageRow = NSStackView(views: [NSTextField(labelWithString: L10n.pick("言語", "Language")),
                                               popUp])
         languageRow.orientation = .horizontal
         languageRow.spacing = 8
 
         let heading = NSTextField(labelWithString: L10n.pick(
-            "左右の Shift を同時に押すと、どこからでもメモが開きます。",
-            "Press both Shift keys to open a note from anywhere."))
+            "左右 Shift で、どこからでもメモ。",
+            "Press both Shift keys for a note anywhere."))
         heading.font = .systemFont(ofSize: 15, weight: .semibold)
 
         let body = NSTextField(wrappingLabelWithString: L10n.pick("""
-        この操作を検知するために、Ttemp は macOS の「入力監視」の許可を必要とします。\
-        Ttemp はキーの押下を読み取るだけで、内容の記録や送信は一切行いません。
+        このショートカットには macOS の「入力監視」が必要です。\
+        入力監視で得たキーイベントは保存・送信しません。
 
-        許可しない場合でも、メニューバーのアイコンから「新規ウィンドウ」で使えます。\
-        許可はあとから与えても、再起動なしでそのまま有効になります。
+        許可しなくても、メニューバーから使えます。
         """, """
-        To detect this gesture, Ttemp needs macOS Input Monitoring permission. \
-        Ttemp only observes key presses; it never records or transmits what you type.
+        This shortcut needs macOS Input Monitoring. \
+        Key events received through it are never stored or sent.
 
-        Without the permission you can still use "New Window" from the menu bar icon. \
-        Granting it later takes effect immediately, no restart needed.
+        You can still use Ttemp from the menu bar without it.
         """))
         body.font = .systemFont(ofSize: 13)
         body.preferredMaxLayoutWidth = 460
 
         // SPEC §11.3: 同じ画面に「ログイン時に起動」（デフォルト ON）を置く
-        let checkbox = NSButton(checkboxWithTitle: L10n.pick("ログイン時に Ttemp を起動する",
-                                                             "Launch Ttemp at login"),
+        let checkbox = NSButton(checkboxWithTitle: L10n.pick("ログイン時に起動",
+                                                             "Launch at login"),
                                 target: self,
                                 action: #selector(launchAtLoginToggled))
         checkbox.state = launchAtLoginChecked ? .on : .off
         launchAtLoginCheckbox = checkbox
 
-        let openButton = NSButton(title: L10n.pick("システム設定を開く", "Open System Settings"),
-                                  target: self, action: #selector(openSettings))
-        let startButton = NSButton(title: L10n.pick("はじめる", "Get Started"),
+        let startButton = NSButton(title: L10n.pick("続ける", "Continue"),
                                    target: self, action: #selector(finish))
         startButton.keyEquivalent = "\r"
 
-        let buttons = NSStackView(views: [openButton, startButton])
-        buttons.orientation = .horizontal
-        buttons.spacing = 12
-
-        let stack = NSStackView(views: [languageRow, heading, body, checkbox, buttons])
+        let stack = NSStackView(views: [languageRow, heading, body, checkbox, startButton])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 18
+        stack.spacing = 14
         stack.translatesAutoresizingMaskIntoConstraints = false
-        stack.edgeInsets = NSEdgeInsets(top: 24, left: 24, bottom: 24, right: 24)
+        stack.edgeInsets = NSEdgeInsets(top: 20, left: 24, bottom: 20, right: 24)
 
         let contentView = NSView()
         contentView.addSubview(stack)
@@ -127,10 +120,6 @@ final class OnboardingWindowController: NSObject {
 
     @objc private func launchAtLoginToggled() {
         launchAtLoginChecked = launchAtLoginCheckbox?.state == .on
-    }
-
-    @objc private func openSettings() {
-        PermissionMonitor.openSystemSettings()
     }
 
     @objc private func finish() {

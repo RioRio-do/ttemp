@@ -10,4 +10,13 @@ enum AppInfo {
     static var repositoryURL: URL {
         URL(string: "https://github.com/\(repositoryOwner)/\(repositoryName)")!
     }
+
+    /// About panel は言語依存の接頭辞を置かず、version/build の値だけを表示する。
+    static var displayVersion: String {
+        let dictionary = Bundle.main.infoDictionary
+        let version = dictionary?["CFBundleShortVersionString"] as? String ?? "—"
+        guard let build = dictionary?["CFBundleVersion"] as? String,
+              !build.isEmpty else { return version }
+        return "\(version) (\(build))"
+    }
 }

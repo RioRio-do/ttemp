@@ -347,11 +347,11 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
     }
 
     private func refreshPinIndicatorLocalization() {
-        let accessibility = L10n.pick("最前面に固定中", "Pinned on top")
+        let accessibility = L10n.pick("固定中", "Pinned")
         pinButton?.image = NSImage(systemSymbolName: "pin.fill",
                                    accessibilityDescription: accessibility)
-        pinButton?.toolTip = L10n.pick("最前面に固定中（クリックで解除）",
-                                      "Pinned on top (click to unpin)")
+        pinButton?.toolTip = L10n.pick("固定中（クリックで解除）",
+                                      "Pinned (click to unpin)")
         pinButton?.setAccessibilityLabel(accessibility)
     }
 
@@ -809,7 +809,7 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
         // 受理済みの画像ファイルをバックグラウンド保存中は、見かけ上まだ空でも閉じない。
         guard pendingImageImportID == nil else { return }
         // SPEC §3.2: キーウィンドウでなくなった時点で判定する。空・テキストモードのときだけ破棄する。
-        // ピン留め中は原則として残すが、設定が「固定する（空になったら消す）」なら空は消す（SPEC §9）。
+        // ピン留め中は原則として残すが、設定が「空なら閉じる」なら空は消す（SPEC §9）。
         guard !isClosing, isEmpty else { return }
         guard !isPinned || preferences.newWindowPinMode.dismissesEmptyWhilePinned else { return }
         discardSilently()

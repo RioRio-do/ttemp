@@ -13,11 +13,9 @@ enum NewWindowPinMode: String, CaseIterable {
 
     var displayName: String {
         switch self {
-        case .unpinned: return L10n.pick("固定しない", "Don't pin")
-        case .pinnedDismissEmpty: return L10n.pick("固定する（空になったら消す）",
-                                                   "Pin (dismiss when empty)")
-        case .pinnedKeepEmpty: return L10n.pick("固定する（空でも残す）",
-                                                "Pin (keep even when empty)")
+        case .unpinned: return L10n.pick("なし", "Off")
+        case .pinnedDismissEmpty: return L10n.pick("空なら閉じる", "Close if empty")
+        case .pinnedKeepEmpty: return L10n.pick("空でも固定", "Keep if empty")
         }
     }
 

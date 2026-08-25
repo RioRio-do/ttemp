@@ -69,11 +69,11 @@ final class Preferences {
                let value = NewWindowPinMode(rawValue: raw) {
                 return value
             }
-            // 旧 Bool 設定からの移行（true だった場合は「固定する（空でも残す）」相当）
+            // 旧 Bool 設定からの移行（true だった場合は「空でも固定」相当）
             if defaults.object(forKey: Key.legacyPinsNewWindowsByDefault) != nil {
                 return defaults.bool(forKey: Key.legacyPinsNewWindowsByDefault) ? .pinnedKeepEmpty : .unpinned
             }
-            // SPEC §9: 既定は「固定する（空になったら消す）」
+            // SPEC §9: 既定は「空なら閉じる」
             return .pinnedDismissEmpty
         }
         set { defaults.set(newValue.rawValue, forKey: Key.newWindowPinMode) }

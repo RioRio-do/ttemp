@@ -10,6 +10,7 @@ packages:
 
 options:
   bundleIdPrefix: com.am921
+  developmentLanguage: en
   deploymentTarget:
     macOS: "14.0"
   createIntermediateGroups: true
@@ -79,6 +80,8 @@ targets:
       - path: Sources/Util/ImageStore.swift
       - path: Sources/Util/FontSizeShortcut.swift
       - path: Sources/Settings/LocalModifier.swift
+      - path: Sources/Settings/NewWindowPinMode.swift
+      - path: Sources/Settings/Preferences.swift
       - path: Sources/Util/L10n.swift
       - path: Sources/App/ApplicationLocation.swift
     settings:
