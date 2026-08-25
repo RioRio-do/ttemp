@@ -120,7 +120,8 @@ jobs:
           echo "TTEMP_SIGN_IDENTITY=$SIGN_IDENTITY" >> "$GITHUB_ENV"
           echo "==> 署名identity fingerprintを確認"
 
-      - name: リリースビルドと appcast 生成
+      - name: リリースビルドと配布物生成
+        timeout-minutes: 20
         env:
           TTEMP_VERSION: ${{ steps.version.outputs.version }}
           TTEMP_BUILD: ${{ steps.version.outputs.build }}

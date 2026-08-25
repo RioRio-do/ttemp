@@ -80,30 +80,32 @@ on run argv
     set mountPath to item 1 of argv
     set volumeName to do shell script "/usr/bin/basename " & quoted form of mountPath
 
-    tell application "Finder"
-        tell disk volumeName
-            open
-            set installerWindow to container window
-            set current view of installerWindow to icon view
-            set toolbar visible of installerWindow to false
-            set statusbar visible of installerWindow to false
-            set pathbar visible of installerWindow to false
-            set bounds of installerWindow to {100, 100, 760, 500}
+    with timeout of 30 seconds
+        tell application "Finder"
+            tell disk volumeName
+                open
+                set installerWindow to container window
+                set current view of installerWindow to icon view
+                set toolbar visible of installerWindow to false
+                set statusbar visible of installerWindow to false
+                set pathbar visible of installerWindow to false
+                set bounds of installerWindow to {100, 100, 760, 500}
 
-            set viewOptions to icon view options of installerWindow
-            set arrangement of viewOptions to not arranged
-            set icon size of viewOptions to 104
-            set text size of viewOptions to 13
-            set background picture of viewOptions to file ".background:background.png"
+                set viewOptions to icon view options of installerWindow
+                set arrangement of viewOptions to not arranged
+                set icon size of viewOptions to 104
+                set text size of viewOptions to 13
+                set background picture of viewOptions to file ".background:background.png"
 
-            set position of item "Ttemp.app" of installerWindow to {165, 205}
-            set position of item "Applications" of installerWindow to {495, 205}
+                set position of item "Ttemp.app" of installerWindow to {165, 205}
+                set position of item "Applications" of installerWindow to {495, 205}
 
-            update without registering applications
-            delay 1
-            close installerWindow
+                update without registering applications
+                delay 1
+                close installerWindow
+            end tell
         end tell
-    end tell
+    end timeout
 end run
 APPLESCRIPT
 }

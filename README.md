@@ -13,6 +13,16 @@ Press both Shift keys to open a scratch note from anywhere. A tiny macOS menu ba
 - macOS 14.0 以降
 - ビルドには Xcode と [XcodeGen](https://github.com/yonaskolb/XcodeGen)（`brew install xcodegen`）
 
+## インストール
+
+[最新の Ttemp.dmg](https://github.com/RioRio-do/ttemp/releases/latest/download/Ttemp.dmg) を開き、
+Ttemp.app を Applications へドラッグする。配布用の Release 版は Applications 外から
+起動すると、Finder で現在の場所を表示して終了する。
+
+自己署名アプリのため、初回だけ macOS に止められた場合は Applications 内の Ttemp を
+右クリックして「開く」を選ぶ。GitHub Release の `Ttemp.zip` は Sparkle 自動更新用で、
+初回インストールには `Ttemp.dmg` を使う。
+
 ## ビルド
 
 ```bash
@@ -23,7 +33,7 @@ xcodebuild -project Ttemp.xcodeproj -scheme Ttemp -configuration Release build
 ## リリース
 
 main へ push するだけ。CI（GitHub Actions）がテスト → バージョン採番 →
-署名 → GitHub Release 作成まで全自動で行う。鍵のセットアップ（一度だけ）や
+署名 → DMG/ZIP/appcast 生成 → GitHub Release 作成まで全自動で行う。鍵のセットアップ（一度だけ）や
 仕組みの詳細は [docs/SIGNING.md](docs/SIGNING.md) を参照。
 
 ## テスト
