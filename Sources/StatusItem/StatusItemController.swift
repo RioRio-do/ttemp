@@ -11,15 +11,15 @@ final class StatusItemController: NSObject {
     /// 「最新版を確認…」。Sparkle の updater（AppDelegate 持ち）に委ねる
     var onCheckForUpdates: (() -> Void)?
 
-    /// SPEC §8.3 の未決事項に対する決定: 一覧のサムネイルは高さ16ptに揃える
-    private static let thumbnailHeight: CGFloat = 16
+    /// 一覧のサムネイルを収める上限。極端な横長画像でもメニュー幅を押し広げない。
+    private static let thumbnailMaxSize = NSSize(width: 48, height: 16)
 
     init(windowManager: WindowManager) {
         self.windowManager = windowManager
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         super.init()
 
-        // PLAN §3.6: statusItem.menu を設定すると左クリックでもメニューが開いてしまう
+        // SPEC §8.3: statusItem.menu を設定すると左クリックでもメニューが開いてしまう
         if let button = statusItem.button {
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
             button.target = self
@@ -55,10 +55,12 @@ final class StatusItemController: NSObject {
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Ttemp")
         image?.isTemplate = true
         button.image = image
-        button.toolTip = showsPermissionWarning
+        let description = showsPermissionWarning
             ? L10n.pick("Ttemp — 入力監視が未許可のため左右 Shift が反応しません",
                         "Ttemp — Left+Right Shift is disabled: Input Monitoring not allowed")
             : "Ttemp"
+        button.toolTip = description
+        button.setAccessibilityLabel(description)
     }
 
     @objc private func handleClick() {
@@ -125,7 +127,7 @@ final class StatusItemController: NSObject {
                      action: #selector(quit), keyEquivalent: "")
             .target = self
 
-        // PLAN §3.6: 表示直後に menu を外して左クリック分岐を保つ
+        // SPEC §8.3: 表示直後に menu を外して左クリック分岐を保つ
         statusItem.menu = menu
         statusItem.button?.performClick(nil)
         statusItem.menu = nil
@@ -167,8 +169,15 @@ final class StatusItemController: NSObject {
     }
 
     private static func scaledThumbnail(_ image: NSImage) -> NSImage {
-        let ratio = image.size.height > 0 ? image.size.width / image.size.height : 1
-        let size = NSSize(width: max(1, thumbnailHeight * ratio), height: thumbnailHeight)
+        let sourceSize = image.size
+        guard sourceSize.width.isFinite, sourceSize.height.isFinite,
+              sourceSize.width > 0, sourceSize.height > 0 else {
+            return NSImage(size: NSSize(width: 1, height: 1))
+        }
+        let scale = min(Self.thumbnailMaxSize.width / sourceSize.width,
+                        Self.thumbnailMaxSize.height / sourceSize.height)
+        let size = NSSize(width: max(1, sourceSize.width * scale),
+                          height: max(1, sourceSize.height * scale))
         // lockFocus はビットマップを1つの解像度で焼き込むため Retina で潰れる。
         // drawingHandler なら描画先のスケールで都度描かれる。
         return NSImage(size: size, flipped: false) { rect in

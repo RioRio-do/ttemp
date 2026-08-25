@@ -6,7 +6,7 @@ final class NoteImageView: NSImageView {
     weak var pasteHandler: NotePasteHandling?
     /// 右クリックメニューの供給元
     var menuProvider: (() -> NSMenu?)?
-    /// ⌘C（SPEC §14 の未決事項に対する決定: 「画像をコピー」と同じ動作にする）
+    /// ⌘C（SPEC §6.3: 「画像をコピー」と同じ動作にする）
     var onCopy: (() -> Void)?
     /// SPEC §7.2: ⌘/⌃ + スクロール。消費したら true を返す
     var scrollHandler: ((NSEvent) -> Bool)?
@@ -36,7 +36,7 @@ final class NoteImageView: NSImageView {
         registerForDraggedTypes(PasteboardReader.acceptedDragTypes)
     }
 
-    // MARK: - GIF のホバー再生（SPEC §6.3 / PLAN §3.8）
+    // MARK: - GIF のホバー再生（SPEC §6.3）
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -67,7 +67,7 @@ final class NoteImageView: NSImageView {
         menuProvider?()
     }
 
-    /// SPEC §14 の未決事項に対する決定: 画像モードの ⌘C は「画像をコピー」と同じ動作にする。
+    /// SPEC §6.3: 画像モードの ⌘C は「画像をコピー」と同じ動作にする。
     /// `NSImageView` は `copy(_:)` を持たないので、レスポンダチェーン用に自前で生やす。
     @objc func copy(_ sender: Any?) {
         onCopy?()
@@ -78,7 +78,7 @@ final class NoteImageView: NSImageView {
         _ = pasteHandler?.handlePasteboard(.general, isDrop: false)
     }
 
-    /// SPEC §14 の未決事項に対する決定: 画像モードの ⌘A は何もしない（選択の概念がない）。
+    /// SPEC §6.3: 画像モードの ⌘A は何もしない（選択の概念がない）。
     override func selectAll(_ sender: Any?) {}
 
     override func cancelOperation(_ sender: Any?) {

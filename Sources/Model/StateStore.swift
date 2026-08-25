@@ -24,9 +24,14 @@ final class StateStore {
     private let debounceInterval: TimeInterval
     private let maxSaveDelay: TimeInterval
     private let fileManager: FileManager
+    private let uptimeProvider: () -> TimeInterval
+    /// JSON エンコード、ファイル書き込み、画像ディレクトリ走査を直列化する。
+    /// ノート本文が大きくても AppKit のメインスレッドを止めない。
+    private let ioQueue = DispatchQueue(label: "com.am921.ttemp.state-store", qos: .utility)
     private var pendingSave: DispatchWorkItem?
+    private var retrySave: DispatchWorkItem?
     /// 未保存の変更のうち、いちばん古いものが積まれた時刻
-    private var oldestPendingChange: Date?
+    private var oldestPendingChangeUptime: TimeInterval?
     /// 状態ファイルを読めなかったセッションでは孤児画像の掃除をしない。
     /// 復元できなかっただけで、退避した state.json から手で拾える可能性を残すため（SPEC §10.4）。
     private var allowsImagePruning = true
@@ -40,11 +45,13 @@ final class StateStore {
     init(directory: URL = StateStore.defaultDirectory,
          debounceInterval: TimeInterval = StateStore.defaultDebounceInterval,
          maxSaveDelay: TimeInterval = StateStore.defaultMaxSaveDelay,
-         fileManager: FileManager = .default) {
+         fileManager: FileManager = .default,
+         uptimeProvider: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
         self.directory = directory
-        self.debounceInterval = debounceInterval
-        self.maxSaveDelay = maxSaveDelay
+        self.debounceInterval = max(0, debounceInterval)
+        self.maxSaveDelay = max(0, maxSaveDelay)
         self.fileManager = fileManager
+        self.uptimeProvider = uptimeProvider
     }
 
     static var defaultDirectory: URL {
@@ -59,6 +66,10 @@ final class StateStore {
     // MARK: - 読込
 
     func load() -> LoadResult {
+        ioQueue.sync { loadSynchronously() }
+    }
+
+    private func loadSynchronously() -> LoadResult {
         guard fileManager.fileExists(atPath: stateFileURL.path) else { return .empty }
 
         do {
@@ -102,13 +113,17 @@ final class StateStore {
     /// SPEC §10.1: 内容変更・移動・リサイズのたびに呼ぶ。1秒デバウンスで実際の書き込みを行う。
     /// ただし変更が途切れない場合でも `maxSaveDelay` で頭打ちにする。
     func scheduleSave() {
+        retrySave?.cancel()
+        retrySave = nil
+
         let delay: TimeInterval
-        if let oldest = oldestPendingChange {
+        if let oldest = oldestPendingChangeUptime {
             // 最初の未保存の変更からの経過時間で頭打ちにする
-            let remaining = maxSaveDelay - Date().timeIntervalSince(oldest)
+            // 壁時計はユーザー操作や時刻同期で前後するため、単調増加する uptime を使う。
+            let remaining = maxSaveDelay - (uptimeProvider() - oldest)
             delay = max(0, min(debounceInterval, remaining))
         } else {
-            oldestPendingChange = Date()
+            oldestPendingChangeUptime = uptimeProvider()
             delay = debounceInterval
         }
 
@@ -124,21 +139,36 @@ final class StateStore {
     func flush() {
         pendingSave?.cancel()
         pendingSave = nil
-        performSave()
-    }
-
-    private func performSave() {
-        pendingSave = nil
-        oldestPendingChange = nil
+        retrySave?.cancel()
+        retrySave = nil
+        oldestPendingChangeUptime = nil
         guard let state = snapshotProvider?() else { return }
         do {
-            try save(state)
+            try ioQueue.sync { try saveSynchronously(state) }
         } catch {
             NSLog("[Ttemp] state.json の保存に失敗した: \(error.localizedDescription)")
         }
     }
 
+    private func performSave() {
+        pendingSave = nil
+        oldestPendingChangeUptime = nil
+        guard let state = snapshotProvider?() else { return }
+        ioQueue.async { [self] in
+            do {
+                try saveSynchronously(state)
+            } catch {
+                NSLog("[Ttemp] state.json の保存に失敗した: \(error.localizedDescription)")
+                scheduleRetryAfterFailure()
+            }
+        }
+    }
+
     func save(_ state: AppState) throws {
+        try ioQueue.sync { try saveSynchronously(state) }
+    }
+
+    private func saveSynchronously(_ state: AppState) throws {
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -148,6 +178,21 @@ final class StateStore {
         // state.json を書いた後にだけ孤児画像を掃除する（順序を逆にすると
         // 保存に失敗した場合に参照されている画像を消してしまう）
         pruneUnreferencedImages(keeping: state)
+    }
+
+    /// 一時的なディスク障害で最後の変更が保存されないまま止まらないよう再試行する。
+    /// 新しい編集が来た場合は通常のデバウンスがこの再試行を置き換える。
+    private func scheduleRetryAfterFailure() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, pendingSave == nil, retrySave == nil else { return }
+            let item = DispatchWorkItem { [weak self] in
+                self?.retrySave = nil
+                self?.scheduleSave()
+            }
+            retrySave = item
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.defaultMaxSaveDelay,
+                                          execute: item)
+        }
     }
 
     // MARK: - 画像ファイル
@@ -163,11 +208,39 @@ final class StateStore {
             return reference.fileName
         })
         guard referenced != lastPrunedReferences else { return }
-        lastPrunedReferences = referenced
-        guard let entries = try? fileManager.contentsOfDirectory(at: imagesDirectoryURL,
-                                                                includingPropertiesForKeys: nil) else { return }
-        for entry in entries where !referenced.contains(entry.lastPathComponent) {
-            try? fileManager.removeItem(at: entry)
+
+        guard fileManager.fileExists(atPath: imagesDirectoryURL.path) else {
+            lastPrunedReferences = referenced
+            return
+        }
+
+        let keys: [URLResourceKey] = [.isRegularFileKey, .isSymbolicLinkKey]
+        let entries: [URL]
+        do {
+            entries = try fileManager.contentsOfDirectory(at: imagesDirectoryURL,
+                                                          includingPropertiesForKeys: keys)
+        } catch {
+            NSLog("[Ttemp] 孤児画像の一覧取得に失敗した: \(error.localizedDescription)")
+            return
+        }
+
+        var completedWithoutError = true
+        for entry in entries {
+            let name = entry.lastPathComponent
+            guard ImageReference.isManagedFileName(name), !referenced.contains(name) else { continue }
+            do {
+                let values = try entry.resourceValues(forKeys: Set(keys))
+                // 管理形式と同名でもディレクトリは再帰削除しない。通常ファイルと
+                // シンボリックリンク（リンク自体の削除）だけを掃除する。
+                guard values.isRegularFile == true || values.isSymbolicLink == true else { continue }
+                try fileManager.removeItem(at: entry)
+            } catch {
+                completedWithoutError = false
+                NSLog("[Ttemp] 孤児画像の削除に失敗した (\(name)): \(error.localizedDescription)")
+            }
+        }
+        if completedWithoutError {
+            lastPrunedReferences = referenced
         }
     }
 }

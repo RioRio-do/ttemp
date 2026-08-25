@@ -47,6 +47,13 @@ enum ImageExporter {
     /// SPEC §8.2: JPEG 品質は 0.9 固定（品質スライダーは出さない）
     static let jpegQuality: CGFloat = 0.9
 
+    /// 実行中の ImageIO が HEIC の書き出し先を提供しているか。
+    /// OS／ランタイムによっては読み込みだけ可能で書き出せないため、メニューを動的に絞る。
+    static var canEncodeHEIC: Bool {
+        let identifiers = CGImageDestinationCopyTypeIdentifiers() as? [String] ?? []
+        return identifiers.contains(UTType.heic.identifier)
+    }
+
     /// SPEC §8.2: `Ttemp 2026-07-25 21.34.12.png` 形式（スクリーンショットの命名に倣う）
     static func defaultFileName(date: Date, fileExtension: String, calendar: Calendar = .current) -> String {
         let formatter = DateFormatter()
@@ -64,7 +71,7 @@ enum ImageExporter {
         }
         guard let type = format.utType,
               let source = CGImageSourceCreateWithData(originalData as CFData, nil),
-              let cgImage = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+              CGImageSourceGetCount(source) > 0 else { return nil }
 
         let output = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(output,
@@ -75,18 +82,28 @@ enum ImageExporter {
         if format == .jpeg || format == .heic {
             options[kCGImageDestinationLossyCompressionQuality] = jpegQuality
         }
-        CGImageDestinationAddImage(destination, cgImage, options as CFDictionary)
+        // 明示的に CGImage へ展開するより、ImageIO にソースからの変換を任せる方が
+        // ピクセルバッファの常駐時間を短くでき、EXIF orientation 等のメタデータも保てる。
+        CGImageDestinationAddImageFromSource(destination, source, 0, options as CFDictionary)
         guard CGImageDestinationFinalize(destination) else { return nil }
         return output as Data
     }
 
     /// 保存メニューに並べる形式（SPEC §8.2）。元形式が判別できる場合のみ先頭に足す。
-    static func availableFormats(originalExtension: String?) -> [ImageExportFormat] {
+    static func availableFormats(originalExtension: String?,
+                                 supportsHEIC: Bool = ImageExporter.canEncodeHEIC) -> [ImageExportFormat] {
         var formats: [ImageExportFormat] = []
-        if let originalExtension, originalExtension != "dat" {
-            formats.append(.original(fileExtension: originalExtension))
+        if let originalExtension {
+            let normalized = ImageReference.normalizedFileExtension(originalExtension)
+            if normalized != "dat" {
+                formats.append(.original(fileExtension: normalized))
+            }
         }
-        formats.append(contentsOf: [.png, .jpeg, .heic, .tiff])
+        formats.append(contentsOf: [.png, .jpeg])
+        if supportsHEIC {
+            formats.append(.heic)
+        }
+        formats.append(.tiff)
         return formats
     }
 }

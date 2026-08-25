@@ -41,7 +41,7 @@ final class WindowManager {
 
     /// 左右 Shift／メニューバーからの新規ウィンドウ（SPEC §3.1）。
     func createNoteActivating() {
-        // SPEC §3.1 / PLAN §3.10: 協調的アクティベーション（`NSApp.activate()`）では
+        // SPEC §3.1: 協調的アクティベーション（`NSApp.activate()`）では
         // 他アプリからの譲渡がなく無視され、ウィンドウが前面のアプリの背後に出てしまう。
         // 非推奨だが従来挙動の ignoringOtherApps を使う。
         NSApp.activate(ignoringOtherApps: true)
@@ -80,16 +80,17 @@ final class WindowManager {
 
     /// SPEC §3.6: マウスカーソルがあるディスプレイの中央やや上。既存と重なればカスケード。
     private func nextFrame() -> NSRect {
-        let visibleFrame = Self.screenUnderCursor().visibleFrame
+        let visibleFrame = Self.screenUnderCursor()?.visibleFrame
+            ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
         let occupied = controllers.map { $0.window.frame.origin }
         return WindowPlacement.frame(in: visibleFrame, occupiedOrigins: occupied)
     }
 
-    private static func screenUnderCursor() -> NSScreen {
+    private static func screenUnderCursor() -> NSScreen? {
         let location = NSEvent.mouseLocation
         return NSScreen.screens.first { NSMouseInRect(location, $0.frame, false) }
             ?? NSScreen.main
-            ?? NSScreen.screens[0]
+            ?? NSScreen.screens.first
     }
 
     // MARK: - 永続化（SPEC §10）
@@ -125,6 +126,8 @@ final class WindowManager {
 
     /// SPEC §3.4: メニューバー左クリック時。全ウィンドウを前面に持ってくる。
     func bringAllToFront() {
+        // ウィンドウがない左クリックで、意味なく作業中アプリからフォーカスを奪わない。
+        guard !controllers.isEmpty else { return }
         NSApp.activate(ignoringOtherApps: true)
         for controller in controllers {
             controller.orderFront()

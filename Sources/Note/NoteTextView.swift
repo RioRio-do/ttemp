@@ -33,7 +33,7 @@ final class NoteTextView: NSTextView {
         isAutomaticDashSubstitutionEnabled = false
         isAutomaticTextReplacementEnabled = false
         isAutomaticSpellingCorrectionEnabled = false
-        // PLAN §3.4: 切らないと入力した URL に自動でリンク属性が付く
+        // SPEC §5.2: 切らないと入力した URL に自動でリンク属性が付く
         isAutomaticLinkDetectionEnabled = false
         isAutomaticDataDetectionEnabled = false
         isContinuousSpellCheckingEnabled = false

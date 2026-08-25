@@ -5,7 +5,7 @@ import AppKit
 /// なぜ入力監視が必要かを説明し、システム設定への導線と
 /// 「ログイン時に起動」（デフォルト ON）を同じ画面に置く。
 /// 冒頭に表示言語の選択を置く（初期値は OS の言語。選ぶと画面ごと切り替わる）。
-final class OnboardingWindowController: NSObject, NSWindowDelegate {
+final class OnboardingWindowController: NSObject {
     private let preferences: Preferences
     private var window: NSWindow?
     private var languagePopUp: NSPopUpButton?
@@ -31,11 +31,12 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
 
     private func makeWindow() -> NSWindow {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 340),
-                              styleMask: [.titled, .closable],
+                              // 初回説明を閉じるボタンだけで完了扱いにすると、既定 ON の
+                              // ログイン項目も権限要求も適用されない。明示的な「はじめる」で完了する。
+                              styleMask: [.titled],
                               backing: .buffered,
                               defer: false)
         window.isReleasedWhenClosed = false
-        window.delegate = self
         applyContent(to: window)
         return window
     }
@@ -138,10 +139,5 @@ final class OnboardingWindowController: NSObject, NSWindowDelegate {
         preferences.hasCompletedOnboarding = true
         window?.close()
         onFinish?()
-    }
-
-    func windowWillClose(_ notification: Notification) {
-        // 閉じるボタンで閉じた場合も「表示済み」にする（毎回出続けるのを避ける）
-        preferences.hasCompletedOnboarding = true
     }
 }

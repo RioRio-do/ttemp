@@ -17,7 +17,7 @@ enum PasteDecision: Equatable {
     case text(String)
     /// pasteboard 上の画像データ
     case image(data: Data, fileExtension: String)
-    /// 画像ファイルの URL（バイト列は呼び出し側が読む。原本を保つため。PLAN §3.7）
+    /// 画像ファイルの URL（バイト列は呼び出し側が読む。原本を保つため。SPEC §6.3）
     case imageFile(URL)
     /// 画像以外のファイルなど、扱えない内容
     case rejectUnsupported
@@ -106,7 +106,7 @@ enum PasteboardReader {
 
     // MARK: - NSPasteboard からの読み取り
 
-    /// 原本の形式を保つため、`NSImage` ではなく生データで受け取る（PLAN §3.7）。
+    /// 原本の形式を保つため、`NSImage` ではなく生データで受け取る（SPEC §6.3）。
     /// TIFF は macOS が変換して載せることが多いので最後に回す。
     private static let imageTypePriority: [(type: NSPasteboard.PasteboardType, ext: String)] = [
         (NSPasteboard.PasteboardType("com.compuserve.gif"), "gif"),

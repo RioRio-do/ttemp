@@ -96,14 +96,31 @@ final class Preferences {
     var launchAtLogin: Bool {
         get { SMAppService.mainApp.status == .enabled }
         set {
+            let service = SMAppService.mainApp
             do {
                 if newValue {
-                    if SMAppService.mainApp.status != .enabled {
-                        try SMAppService.mainApp.register()
+                    switch service.status {
+                    case .enabled:
+                        break
+                    case .requiresApproval:
+                        // 登録済みだがユーザーが無効化している。再 register は
+                        // already-registered になるため、承認できるシステム画面を開く。
+                        SMAppService.openSystemSettingsLoginItems()
+                    case .notRegistered, .notFound:
+                        try service.register()
+                    @unknown default:
+                        try service.register()
                     }
                 } else {
-                    if SMAppService.mainApp.status == .enabled {
-                        try SMAppService.mainApp.unregister()
+                    // requiresApproval も「登録済み」。ここで解除しないと、UI 上は OFF でも
+                    // システムには保留中のログイン項目が残り続ける。
+                    switch service.status {
+                    case .enabled, .requiresApproval:
+                        try service.unregister()
+                    case .notRegistered, .notFound:
+                        break
+                    @unknown default:
+                        try service.unregister()
                     }
                 }
             } catch {

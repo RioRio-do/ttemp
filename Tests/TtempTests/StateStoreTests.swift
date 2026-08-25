@@ -55,6 +55,28 @@ final class StateStoreTests: XCTestCase {
         XCTAssertEqual(loaded.notes.first?.fontSizeOffset, 5)
     }
 
+    func test_画像拡張子を安全なファイル名へ正規化する() throws {
+        let id = UUID()
+        XCTAssertEqual(ImageReference(id: id, fileExtension: "PNG").fileExtension, "png")
+        XCTAssertEqual(ImageReference(id: id, fileExtension: "../../secret").fileExtension, "dat")
+        XCTAssertEqual(ImageReference(id: id, fileExtension: "a-b").fileExtension, "dat")
+        XCTAssertEqual(ImageReference(id: id, fileExtension: String(repeating: "a", count: 17)).fileExtension,
+                       "dat")
+
+        let json = Data(#"{"id":"\#(id.uuidString)","fileExtension":"../png"}"#.utf8)
+        let decoded = try JSONDecoder().decode(ImageReference.self, from: json)
+        XCTAssertEqual(decoded.fileName, "\(id.uuidString).dat")
+        XCTAssertFalse(decoded.fileName.contains("/"))
+    }
+
+    func test_管理対象の画像ファイル名だけを識別する() {
+        let id = UUID().uuidString
+        XCTAssertTrue(ImageReference.isManagedFileName("\(id).png"))
+        XCTAssertFalse(ImageReference.isManagedFileName("\(id).PNG"))
+        XCTAssertFalse(ImageReference.isManagedFileName("\(id).../png"))
+        XCTAssertFalse(ImageReference.isManagedFileName("README.txt"))
+    }
+
     func test_ノードの並び順が保たれる() throws {
         let notes = (0..<5).map { makeNote(text: "note-\($0)") }
         try store.save(AppState(notes: notes))
@@ -188,6 +210,28 @@ final class StateStoreTests: XCTestCase {
         XCTAssertEqual(callCount, 2, "起点がリセットされ、次もデバウンス間隔で書かれる")
     }
 
+    func test_最大保存遅延は壁時計ではなく単調時刻で判定する() {
+        var uptime = 100.0
+        let store = StateStore(directory: directory,
+                               debounceInterval: 10,
+                               maxSaveDelay: 5,
+                               uptimeProvider: { uptime })
+        var callCount = 0
+        store.snapshotProvider = {
+            callCount += 1
+            return AppState()
+        }
+
+        store.scheduleSave()
+        uptime = 106
+        store.scheduleSave()
+
+        let expectation = expectation(description: "monotonic max delay")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { expectation.fulfill() }
+        wait(for: [expectation], timeout: 2)
+        XCTAssertEqual(callCount, 1)
+    }
+
     func test_flushは保留中の保存を即座に書き出す() {
         store.snapshotProvider = { AppState(notes: [self.makeNote(text: "flush")]) }
         store.scheduleSave()
@@ -272,5 +316,31 @@ final class StateStoreTests: XCTestCase {
 
         XCTAssertTrue(FileManager.default.fileExists(
             atPath: store.imagesDirectoryURL.appendingPathComponent(orphan.fileName).path))
+    }
+
+    func test_孤児掃除は無関係なファイルやディレクトリを消さない() throws {
+        try FileManager.default.createDirectory(at: store.imagesDirectoryURL,
+                                                withIntermediateDirectories: true)
+        let unmanagedURL = store.imagesDirectoryURL.appendingPathComponent("README.txt")
+        try Data("keep".utf8).write(to: unmanagedURL)
+
+        let directoryName = ImageReference(id: UUID(), fileExtension: "png").fileName
+        let nestedDirectoryURL = store.imagesDirectoryURL.appendingPathComponent(directoryName,
+                                                                                  isDirectory: true)
+        try FileManager.default.createDirectory(at: nestedDirectoryURL,
+                                                withIntermediateDirectories: true)
+
+        let orphan = ImageReference(id: UUID(), fileExtension: "png")
+        let orphanURL = store.imagesDirectoryURL.appendingPathComponent(orphan.fileName)
+        try Data("remove".utf8).write(to: orphanURL)
+
+        try store.save(AppState())
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: unmanagedURL.path))
+        var isDirectory: ObjCBool = false
+        XCTAssertTrue(FileManager.default.fileExists(atPath: nestedDirectoryURL.path,
+                                                      isDirectory: &isDirectory))
+        XCTAssertTrue(isDirectory.boolValue)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: orphanURL.path))
     }
 }

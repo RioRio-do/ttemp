@@ -88,7 +88,7 @@ final class NoteWindow: NSWindow {
     // MARK: - 拒否フィードバック
 
     /// SPEC §6.1: 拒否フィードバック。ウィンドウを軽く横に揺らす。
-    /// 振幅・回数・時間は SPEC §14 の未決事項に対する決定値。
+    /// 振幅・回数・時間は SPEC §3.7 / §14.1 の規定値。
     func shake() {
         let amplitude: CGFloat = 8
         let duration: TimeInterval = 0.24
