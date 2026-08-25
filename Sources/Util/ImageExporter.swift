@@ -13,7 +13,8 @@ enum ImageExportFormat: Equatable {
 
     var displayName: String {
         switch self {
-        case .original(let ext): return "元の形式のまま (\(ext.uppercased()))"
+        case .original(let ext): return L10n.pick("元の形式のまま (\(ext.uppercased()))",
+                                                  "Original Format (\(ext.uppercased()))")
         case .png: return "PNG"
         case .jpeg: return "JPEG"
         case .heic: return "HEIC"

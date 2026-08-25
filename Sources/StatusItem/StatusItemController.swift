@@ -24,6 +24,20 @@ final class StatusItemController: NSObject {
             button.action = #selector(handleClick)
         }
         updateImage()
+
+        // 言語切替でツールチップを追従させる（メニューは表示のたびに組み直すので不要）
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(languageDidChange),
+                                               name: L10n.didChangeNotification,
+                                               object: nil)
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    @objc private func languageDidChange() {
+        updateImage()
     }
 
     /// SPEC §11.3: 権限が未付与／剥奪されたらアイコンに警告を出す。
@@ -40,7 +54,8 @@ final class StatusItemController: NSObject {
         image?.isTemplate = true
         button.image = image
         button.toolTip = showsPermissionWarning
-            ? "Ttemp — 入力監視が未許可のため左右 Shift が反応しません"
+            ? L10n.pick("Ttemp — 入力監視が未許可のため左右 Shift が反応しません",
+                        "Ttemp — Left+Right Shift is disabled: Input Monitoring not allowed")
             : "Ttemp"
     }
 
@@ -57,12 +72,13 @@ final class StatusItemController: NSObject {
         let menu = NSMenu()
 
         // SPEC §8.3: 入力監視が未付与でもアプリを使えるようにするため必ず置く
-        menu.addItem(withTitle: "新規ウィンドウ", action: #selector(newWindow), keyEquivalent: "")
+        menu.addItem(withTitle: L10n.pick("新規ウィンドウ", "New Window"),
+                     action: #selector(newWindow), keyEquivalent: "")
             .target = self
 
         if showsPermissionWarning {
             menu.addItem(.separator())
-            let item = menu.addItem(withTitle: "入力監視を許可…",
+            let item = menu.addItem(withTitle: L10n.pick("入力監視を許可…", "Allow Input Monitoring…"),
                                     action: #selector(openPermissionSettings),
                                     keyEquivalent: "")
             item.target = self
@@ -82,24 +98,29 @@ final class StatusItemController: NSObject {
                 }
             }
             menu.addItem(.separator())
-            let allItem = menu.addItem(withTitle: "すべてのウィンドウを前面に",
+            let allItem = menu.addItem(withTitle: L10n.pick("すべてのウィンドウを前面に", "Bring All Windows to Front"),
                                        action: #selector(bringAllToFront),
                                        keyEquivalent: "")
             allItem.target = self
         }
 
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Ttemp について", action: #selector(showAbout), keyEquivalent: "")
+        menu.addItem(withTitle: L10n.pick("Ttemp について", "About Ttemp"),
+                     action: #selector(showAbout), keyEquivalent: "")
             .target = self
-        menu.addItem(withTitle: "最新版を確認…", action: #selector(checkForUpdates), keyEquivalent: "")
+        menu.addItem(withTitle: L10n.pick("最新版を確認…", "Check for Updates…"),
+                     action: #selector(checkForUpdates), keyEquivalent: "")
             .target = self
-        menu.addItem(withTitle: "GitHub ページを開く", action: #selector(openGitHub), keyEquivalent: "")
+        menu.addItem(withTitle: L10n.pick("GitHub ページを開く", "Open GitHub Page"),
+                     action: #selector(openGitHub), keyEquivalent: "")
             .target = self
 
         menu.addItem(.separator())
-        menu.addItem(withTitle: "設定…", action: #selector(openSettings), keyEquivalent: "")
+        menu.addItem(withTitle: L10n.pick("設定…", "Settings…"),
+                     action: #selector(openSettings), keyEquivalent: "")
             .target = self
-        menu.addItem(withTitle: "Ttemp を終了", action: #selector(quit), keyEquivalent: "")
+        menu.addItem(withTitle: L10n.pick("Ttemp を終了", "Quit Ttemp"),
+                     action: #selector(quit), keyEquivalent: "")
             .target = self
 
         // PLAN §3.6: 表示直後に menu を外して左クリック分岐を保つ
@@ -145,24 +166,29 @@ final class StatusItemController: NSObject {
             let alert = NSAlert()
             switch result {
             case .upToDate(let current):
-                alert.messageText = "最新版です"
-                alert.informativeText = "Ttemp \(current) は最新のバージョンです。"
+                alert.messageText = L10n.pick("最新版です", "You're up to date")
+                alert.informativeText = L10n.pick("Ttemp \(current) は最新のバージョンです。",
+                                                  "Ttemp \(current) is the latest version.")
                 alert.runModal()
 
             case .updateAvailable(let latest, let url):
-                alert.messageText = "新しいバージョンがあります"
-                alert.informativeText = "Ttemp \(latest) が公開されています（現在: \(AppInfo.version)）。"
-                alert.addButton(withTitle: "リリースページを開く")
-                alert.addButton(withTitle: "あとで")
+                alert.messageText = L10n.pick("新しいバージョンがあります", "Update available")
+                alert.informativeText = L10n.pick(
+                    "Ttemp \(latest) が公開されています（現在: \(AppInfo.version)）。",
+                    "Ttemp \(latest) is available (current: \(AppInfo.version)).")
+                alert.addButton(withTitle: L10n.pick("リリースページを開く", "Open Release Page"))
+                alert.addButton(withTitle: L10n.pick("あとで", "Later"))
                 if alert.runModal() == .alertFirstButtonReturn {
                     NSWorkspace.shared.open(url)
                 }
 
             case .failed(let detail):
-                alert.messageText = "更新を確認できませんでした"
-                alert.informativeText = "ネットワーク接続を確認するか、リリースページを直接確認してください。（\(detail)）"
-                alert.addButton(withTitle: "リリースページを開く")
-                alert.addButton(withTitle: "閉じる")
+                alert.messageText = L10n.pick("更新を確認できませんでした", "Could not check for updates")
+                alert.informativeText = L10n.pick(
+                    "ネットワーク接続を確認するか、リリースページを直接確認してください。（\(detail)）",
+                    "Check your network connection, or visit the release page directly. (\(detail))")
+                alert.addButton(withTitle: L10n.pick("リリースページを開く", "Open Release Page"))
+                alert.addButton(withTitle: L10n.pick("閉じる", "Close"))
                 if alert.runModal() == .alertFirstButtonReturn {
                     NSWorkspace.shared.open(AppInfo.releasesURL)
                 }

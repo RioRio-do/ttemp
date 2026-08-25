@@ -46,6 +46,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             object: nil
         )
 
+        // 言語切替でメインメニュー（⌘V などのキー割り当ての親）を組み立て直す
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleLanguageChange),
+            name: L10n.didChangeNotification,
+            object: nil
+        )
+
         eventTap.onChordFired = { [weak self] in
             self?.windowManager.createNoteActivating()
         }
@@ -100,14 +108,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self, !PermissionMonitor.isAuthorized else { return }
             NSApp.activate(ignoringOtherApps: true)
             let alert = NSAlert()
-            alert.messageText = "入力監視が許可されていません"
-            alert.informativeText = "左右の Shift キー同時押しでメモを開くには、"
-                + "システム設定の「プライバシーとセキュリティ → 入力監視」で Ttemp を許可してください。"
-                + "許可しなくても、メニューバーのアイコンから「新規ウィンドウ」で使えます。"
-            alert.addButton(withTitle: "システム設定を開く")
-            alert.addButton(withTitle: "あとで")
+            alert.messageText = L10n.pick("入力監視が許可されていません",
+                                          "Input Monitoring is not allowed")
+            alert.informativeText = L10n.pick(
+                "左右の Shift キー同時押しでメモを開くには、"
+                    + "システム設定の「プライバシーとセキュリティ → 入力監視」で Ttemp を許可してください。"
+                    + "許可しなくても、メニューバーのアイコンから「新規ウィンドウ」で使えます。",
+                "To open a note by pressing both Shift keys, allow Ttemp in "
+                    + "System Settings → Privacy & Security → Input Monitoring. "
+                    + "Without it, you can still use \"New Window\" from the menu bar icon.")
+            alert.addButton(withTitle: L10n.pick("システム設定を開く", "Open System Settings"))
+            alert.addButton(withTitle: L10n.pick("あとで", "Later"))
             alert.showsSuppressionButton = true
-            alert.suppressionButton?.title = "今後表示しない"
+            alert.suppressionButton?.title = L10n.pick("今後表示しない", "Don't show again")
             let response = alert.runModal()
             if alert.suppressionButton?.state == .on {
                 self.preferences.suppressPermissionAlert = true
@@ -162,5 +175,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func handleBringAllToFront() {
         windowManager.bringAllToFront()
+    }
+
+    @objc private func handleLanguageChange() {
+        MainMenuBuilder.install()
     }
 }

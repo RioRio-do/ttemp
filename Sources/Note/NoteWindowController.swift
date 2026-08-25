@@ -91,11 +91,11 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
 
     /// SPEC §8.3: メニューバーのウィンドウ一覧に出す表示名（先頭30文字）
     var menuTitle: String {
-        if imagePayload != nil { return "画像" }
+        if imagePayload != nil { return L10n.pick("画像", "Image") }
         let flattened = text
             .replacingOccurrences(of: "\n", with: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        if flattened.isEmpty { return "（空のウィンドウ）" }
+        if flattened.isEmpty { return L10n.pick("（空のウィンドウ）", "(Empty window)") }
         return flattened.count <= 30 ? flattened : String(flattened.prefix(30)) + "…"
     }
 
@@ -302,13 +302,15 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
         if isPinned {
             guard pinAccessory == nil else { return }
             let button = NSButton(image: NSImage(systemSymbolName: "pin.fill",
-                                                 accessibilityDescription: "最前面に固定中")
+                                                 accessibilityDescription:
+                                                    L10n.pick("最前面に固定中", "Pinned on top"))
                                     ?? NSImage(),
                                   target: self,
                                   action: #selector(menuTogglePin))
             button.isBordered = false
             button.imageScaling = .scaleProportionallyDown
-            button.toolTip = "最前面に固定中（クリックで解除）"
+            button.toolTip = L10n.pick("最前面に固定中（クリックで解除）",
+                                       "Pinned on top (click to unpin)")
             button.frame = NSRect(x: 0, y: 0, width: 28, height: 22)
 
             let container = NSView(frame: button.frame)
@@ -332,30 +334,33 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
     private func makeTextContextMenu() -> NSMenu {
         let menu = NSMenu()
         // target は nil のままにしてレスポンダチェーン（＝NSTextView）に解決させる
-        menu.addItem(withTitle: "取り消す", action: Selector(("undo:")), keyEquivalent: "")
-        menu.addItem(withTitle: "やり直す", action: Selector(("redo:")), keyEquivalent: "")
+        menu.addItem(withTitle: L10n.pick("取り消す", "Undo"), action: Selector(("undo:")), keyEquivalent: "")
+        menu.addItem(withTitle: L10n.pick("やり直す", "Redo"), action: Selector(("redo:")), keyEquivalent: "")
         menu.addItem(.separator())
-        menu.addItem(withTitle: "カット", action: #selector(NSText.cut(_:)), keyEquivalent: "")
-        menu.addItem(withTitle: "コピー", action: #selector(NSText.copy(_:)), keyEquivalent: "")
-        menu.addItem(withTitle: "ペースト", action: #selector(NSText.paste(_:)), keyEquivalent: "")
-        menu.addItem(withTitle: "すべてを選択", action: #selector(NSText.selectAll(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: L10n.pick("カット", "Cut"), action: #selector(NSText.cut(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: L10n.pick("コピー", "Copy"), action: #selector(NSText.copy(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: L10n.pick("ペースト", "Paste"), action: #selector(NSText.paste(_:)), keyEquivalent: "")
+        menu.addItem(withTitle: L10n.pick("すべてを選択", "Select All"),
+                     action: #selector(NSText.selectAll(_:)), keyEquivalent: "")
         menu.addItem(.separator())
-        let find = menu.addItem(withTitle: "検索…",
+        let find = menu.addItem(withTitle: L10n.pick("検索…", "Find…"),
                                 action: #selector(NSTextView.performTextFinderAction(_:)),
                                 keyEquivalent: "")
         find.tag = NSTextFinder.Action.showFindInterface.rawValue
-        let replace = menu.addItem(withTitle: "置換…",
+        let replace = menu.addItem(withTitle: L10n.pick("置換…", "Find and Replace…"),
                                    action: #selector(NSTextView.performTextFinderAction(_:)),
                                    keyEquivalent: "")
         replace.tag = NSTextFinder.Action.showReplaceInterface.rawValue
         // SPEC §8.1: 空のテキストモードのときだけ、ファイル選択から画像モードへ入る導線を出す
         if mode == .emptyText {
             menu.addItem(.separator())
-            menu.addItem(withTitle: "画像を選択…", action: #selector(menuChooseImage), keyEquivalent: "")
+            menu.addItem(withTitle: L10n.pick("画像を選択…", "Choose Image…"),
+                         action: #selector(menuChooseImage), keyEquivalent: "")
                 .target = self
         }
         menu.addItem(.separator())
-        let pin = menu.addItem(withTitle: "最前面に固定", action: #selector(menuTogglePin), keyEquivalent: "")
+        let pin = menu.addItem(withTitle: L10n.pick("最前面に固定", "Pin on Top"),
+                               action: #selector(menuTogglePin), keyEquivalent: "")
         pin.target = self
         pin.state = isPinned ? .on : .off
         return menu
@@ -623,9 +628,11 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
     /// SPEC §8.2 の右クリックメニュー
     private func makeImageContextMenu() -> NSMenu {
         let menu = NSMenu()
-        menu.addItem(withTitle: "画像をコピー", action: #selector(menuCopyImage), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L10n.pick("画像をコピー", "Copy Image"),
+                     action: #selector(menuCopyImage), keyEquivalent: "").target = self
 
-        let saveItem = menu.addItem(withTitle: "画像を保存", action: nil, keyEquivalent: "")
+        let saveItem = menu.addItem(withTitle: L10n.pick("画像を保存", "Save Image"),
+                                    action: nil, keyEquivalent: "")
         let saveMenu = NSMenu()
         let formats = ImageExporter.availableFormats(originalExtension: imagePayload?.reference.fileExtension)
         for (index, format) in formats.enumerated() {
@@ -641,9 +648,11 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
         saveItem.submenu = saveMenu
 
         menu.addItem(.separator())
-        menu.addItem(withTitle: "画像を削除", action: #selector(menuRemoveImage), keyEquivalent: "").target = self
+        menu.addItem(withTitle: L10n.pick("画像を削除", "Remove Image"),
+                     action: #selector(menuRemoveImage), keyEquivalent: "").target = self
         menu.addItem(.separator())
-        let pinItem = menu.addItem(withTitle: "最前面に固定", action: #selector(menuTogglePin), keyEquivalent: "")
+        let pinItem = menu.addItem(withTitle: L10n.pick("最前面に固定", "Pin on Top"),
+                                   action: #selector(menuTogglePin), keyEquivalent: "")
         pinItem.target = self
         pinItem.state = isPinned ? .on : .off
         return menu

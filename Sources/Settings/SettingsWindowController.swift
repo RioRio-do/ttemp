@@ -7,6 +7,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let globalFontSizeBinding: (get: () -> CGFloat, set: (CGFloat) -> Void)
 
     private var window: NSWindow?
+    private var languagePopUp: NSPopUpButton?
     private var modifierPopUp: NSPopUpButton?
     private var launchAtLoginCheckbox: NSButton?
     private var defaultPinPopUp: NSPopUpButton?
@@ -21,6 +22,21 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         self.preferences = preferences
         self.globalFontSizeBinding = globalFontSize
         super.init()
+
+        // 言語が切り替わったら（この画面の言語ポップアップ経由を含む）表示を作り直す。
+        // ポップアップのアクション中に contentView を差し替えないよう1サイクル遅らせる。
+        NotificationCenter.default.addObserver(forName: L10n.didChangeNotification,
+                                               object: nil,
+                                               queue: .main) { [weak self] _ in
+            DispatchQueue.main.async { self?.rebuildForLanguageChange() }
+        }
+    }
+
+    private func rebuildForLanguageChange() {
+        guard let window else { return }
+        window.title = L10n.pick("Ttemp 設定", "Ttemp Settings")
+        window.contentView = makeContentView()
+        refresh()
     }
 
     func show() {
@@ -51,10 +67,15 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
                               styleMask: [.titled, .closable],
                               backing: .buffered,
                               defer: false)
-        window.title = "Ttemp 設定"
+        window.title = L10n.pick("Ttemp 設定", "Ttemp Settings")
         window.isReleasedWhenClosed = false
         window.delegate = self
+        window.contentView = makeContentView()
+        return window
+    }
 
+    /// 設定項目のビュー階層。言語切替時に丸ごと作り直せるよう window とは分けておく
+    private func makeContentView() -> NSView {
         let stack = NSStackView()
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -62,13 +83,22 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         stack.translatesAutoresizingMaskIntoConstraints = false
         stack.edgeInsets = NSEdgeInsets(top: 20, left: 20, bottom: 20, right: 20)
 
+        // 0. 表示言語（メニュー・設定・アラートに即時反映される）
+        let langPopUp = NSPopUpButton()
+        langPopUp.addItems(withTitles: AppLanguage.allCases.map(\.displayName))
+        langPopUp.target = self
+        langPopUp.action = #selector(languageChanged)
+        languagePopUp = langPopUp
+        stack.addArrangedSubview(row(label: L10n.pick("言語", "Language"), control: langPopUp))
+
         // 1. ローカル文字サイズ操作の修飾キー（SPEC §7.3。グローバルは ⌘ 固定）
         let popUp = NSPopUpButton()
         popUp.addItems(withTitles: LocalModifier.allCases.map(\.displayName))
         popUp.target = self
         popUp.action = #selector(modifierChanged)
         modifierPopUp = popUp
-        stack.addArrangedSubview(row(label: "ローカル操作の修飾キー", control: popUp))
+        stack.addArrangedSubview(row(label: L10n.pick("ローカル操作の修飾キー", "Per-window modifier key"),
+                                     control: popUp))
 
         // 2. デフォルト文字サイズ（SPEC §9: 9〜48pt）
         let field = NSTextField(string: "")
@@ -90,19 +120,23 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         let sizeStack = NSStackView(views: [field, stepper, NSTextField(labelWithString: "pt")])
         sizeStack.orientation = .horizontal
         sizeStack.spacing = 6
-        stack.addArrangedSubview(row(label: "デフォルト文字サイズ", control: sizeStack))
+        stack.addArrangedSubview(row(label: L10n.pick("デフォルト文字サイズ", "Default font size"),
+                                     control: sizeStack))
 
         // 3. 新規ウィンドウの最前面固定の既定（SPEC §9）
         let pinPopUp = NSPopUpButton()
         pinPopUp.addItems(withTitles: NewWindowPinMode.allCases.map(\.displayName))
         pinPopUp.target = self
         pinPopUp.action = #selector(defaultPinModeChanged)
-        pinPopUp.toolTip = "「空でも残す」を選ぶと、何も書いていないウィンドウもフォーカスを外しただけでは消えなくなります"
+        pinPopUp.toolTip = L10n.pick(
+            "「空でも残す」を選ぶと、何も書いていないウィンドウもフォーカスを外しただけでは消えなくなります",
+            "With \"keep even when empty\", blank windows survive losing focus")
         defaultPinPopUp = pinPopUp
-        stack.addArrangedSubview(row(label: "新規ウィンドウの最前面固定", control: pinPopUp))
+        stack.addArrangedSubview(row(label: L10n.pick("新規ウィンドウの最前面固定", "Pin new windows on top"),
+                                     control: pinPopUp))
 
         // 4. ログイン時に起動（SPEC §1）
-        let checkbox = NSButton(checkboxWithTitle: "ログイン時に起動",
+        let checkbox = NSButton(checkboxWithTitle: L10n.pick("ログイン時に起動", "Launch at login"),
                                 target: self,
                                 action: #selector(launchAtLoginChanged))
         launchAtLoginCheckbox = checkbox
@@ -111,14 +145,15 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         // 5. 入力監視権限の状態（SPEC §11.3）
         let statusLabel = NSTextField(labelWithString: "")
         permissionLabel = statusLabel
-        let openButton = NSButton(title: "システム設定を開く",
+        let openButton = NSButton(title: L10n.pick("システム設定を開く", "Open System Settings"),
                                   target: self,
                                   action: #selector(openPermissionSettings))
         permissionButton = openButton
         let permissionStack = NSStackView(views: [statusLabel, openButton])
         permissionStack.orientation = .horizontal
         permissionStack.spacing = 12
-        stack.addArrangedSubview(row(label: "入力監視", control: permissionStack))
+        stack.addArrangedSubview(row(label: L10n.pick("入力監視", "Input Monitoring"),
+                                     control: permissionStack))
 
         let contentView = NSView()
         contentView.addSubview(stack)
@@ -127,8 +162,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
             stack.trailingAnchor.constraint(lessThanOrEqualTo: contentView.trailingAnchor),
             stack.topAnchor.constraint(equalTo: contentView.topAnchor),
         ])
-        window.contentView = contentView
-        return window
+        return contentView
     }
 
     private func row(label: String, control: NSView) -> NSView {
@@ -145,6 +179,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     // MARK: - 表示の更新
 
     private func refresh() {
+        languagePopUp?.selectItem(at: AppLanguage.allCases.firstIndex(of: L10n.current) ?? 0)
         modifierPopUp?.selectItem(at: LocalModifier.allCases.firstIndex(of: preferences.localModifier) ?? 0)
         launchAtLoginCheckbox?.state = preferences.launchAtLogin ? .on : .off
         defaultPinPopUp?.selectItem(at: NewWindowPinMode.allCases.firstIndex(of: preferences.newWindowPinMode) ?? 0)
@@ -154,7 +189,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
     private func updatePermissionStatus() {
         let authorized = PermissionMonitor.isAuthorized
-        permissionLabel?.stringValue = authorized ? "許可済み ✓" : "未許可 ⚠️"
+        permissionLabel?.stringValue = authorized
+            ? L10n.pick("許可済み ✓", "Allowed ✓")
+            : L10n.pick("未許可 ⚠️", "Not allowed ⚠️")
         permissionButton?.isHidden = authorized
     }
 
@@ -175,6 +212,12 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     }
 
     // MARK: - 操作
+
+    @objc private func languageChanged() {
+        guard let index = languagePopUp?.indexOfSelectedItem,
+              AppLanguage.allCases.indices.contains(index) else { return }
+        L10n.current = AppLanguage.allCases[index]
+    }
 
     @objc private func modifierChanged() {
         guard let index = modifierPopUp?.indexOfSelectedItem,
