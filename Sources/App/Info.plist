@@ -27,9 +27,10 @@
 	<string>NSApplication</string>
 	<key>NSHumanReadableCopyright</key>
 	<string></string>
-	<!-- 自動更新（Sparkle 2, docs/SIGNING.md）。appcast.xml は main ブランチ直下を配信元にする -->
+	<!-- 自動更新（Sparkle 2, docs/SIGNING.md）。appcast.xml はリリースアセットとして
+	     CI が毎回アップロードし、この URL は常に最新リリースのものへリダイレクトされる -->
 	<key>SUFeedURL</key>
-	<string>https://raw.githubusercontent.com/RioRio-do/ttemp/main/appcast.xml</string>
+	<string>https://github.com/RioRio-do/ttemp/releases/latest/download/appcast.xml</string>
 	<!-- generate_keys が作った EdDSA 公開鍵（秘密鍵はログインキーチェーン）。
 	     更新パッケージの検証はこの鍵で行うため Apple Developer アカウントは不要 -->
 	<key>SUPublicEDKey</key>

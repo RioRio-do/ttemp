@@ -1,58 +1,68 @@
 #!/bin/bash
-# Release ビルドを「Ttemp Signing」（自己署名証明書）で安定署名し、dist/ に zip を出し、
-# Sparkle 用の appcast.xml をリポジトリ直下に書き出す。
-# 証明書がまだ無ければ、先に scripts/create-signing-cert.sh を実行すること。
+# Release ビルド → 「Ttemp Signing」で安定署名 → dist/Ttemp.zip と dist/appcast.xml を作る。
+# ローカルでも CI（.github/workflows/ci.yml）でも同じ手順を通すための共通スクリプト。
+# 通常のリリースは main へ push するだけで CI が全自動で行う（docs/SIGNING.md）。
 #
-# リリース手順（docs/SIGNING.md）:
-#   1. project.yml の MARKETING_VERSION と CURRENT_PROJECT_VERSION を上げる
-#   2. このスクリプトを実行
-#   3. appcast.xml をコミットして push（SUFeedURL は main の appcast.xml を見る）
-#   4. gh release create "v<版>" dist/Ttemp.zip
+# 環境変数（CI が使う。ローカルでは通常すべて未設定でよい）:
+#   TTEMP_SIGN_IDENTITY  署名 identity（既定: Ttemp Signing）
+#   TTEMP_VERSION        MARKETING_VERSION の上書き（表示用バージョン）
+#   TTEMP_BUILD          CURRENT_PROJECT_VERSION の上書き（Sparkle の更新判定に使う整数）
+#   TTEMP_ED_KEY_FILE    Sparkle EdDSA 秘密鍵ファイル。未設定ならログインキーチェーンの鍵を使う
+#   TTEMP_KEYCHAIN       署名に使うキーチェーン。未設定なら既定の検索リスト
 
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 IDENTITY="${TTEMP_SIGN_IDENTITY:-Ttemp Signing}"
 
-if ! security find-identity -v -p codesigning | grep -q "$IDENTITY"; then
+if ! security find-identity -v -p codesigning ${TTEMP_KEYCHAIN:+"$TTEMP_KEYCHAIN"} | grep -q "$IDENTITY"; then
     echo "コード署名 identity '$IDENTITY' が見つかりません。" >&2
-    echo "先に ./scripts/create-signing-cert.sh を実行してください。" >&2
+    echo "先に ./scripts/setup-release-keys.sh を実行してください。" >&2
     exit 1
 fi
 
 echo "==> プロジェクト生成とビルド"
 xcodegen generate
-xcodebuild -project Ttemp.xcodeproj -scheme Ttemp -configuration Release \
-    -derivedDataPath build/DerivedData \
-    CODE_SIGN_IDENTITY="$IDENTITY" \
-    build
+XCODE_ARGS=(
+    -project Ttemp.xcodeproj -scheme Ttemp -configuration Release
+    -derivedDataPath build/DerivedData
+    CODE_SIGN_IDENTITY="$IDENTITY"
+)
+[ -n "${TTEMP_VERSION:-}" ] && XCODE_ARGS+=(MARKETING_VERSION="$TTEMP_VERSION")
+[ -n "${TTEMP_BUILD:-}" ] && XCODE_ARGS+=(CURRENT_PROJECT_VERSION="$TTEMP_BUILD")
+[ -n "${TTEMP_KEYCHAIN:-}" ] && XCODE_ARGS+=(OTHER_CODE_SIGN_FLAGS="--keychain $TTEMP_KEYCHAIN")
+xcodebuild "${XCODE_ARGS[@]}" build
 
 APP="build/DerivedData/Build/Products/Release/Ttemp.app"
 
 echo "==> 署名の検証"
-codesign --verify --strict --verbose=2 "$APP"
+codesign --verify --deep --strict --verbose=2 "$APP"
 
 echo "==> dist/ へ配置"
 mkdir -p dist
-rm -rf dist/Ttemp.app dist/Ttemp.zip
+rm -rf dist/Ttemp.app dist/Ttemp.zip dist/appcast.xml
 cp -R "$APP" dist/
 ditto -c -k --keepParent dist/Ttemp.app dist/Ttemp.zip
 
 VERSION=$(defaults read "$PWD/dist/Ttemp.app/Contents/Info" CFBundleShortVersionString)
 BUILD=$(defaults read "$PWD/dist/Ttemp.app/Contents/Info" CFBundleVersion)
 
-echo "==> appcast.xml を生成（EdDSA 署名。鍵はログインキーチェーンの generate_keys 産）"
+echo "==> appcast.xml を生成（EdDSA 署名）"
 SPARKLE_BIN="build/DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin"
 if [ ! -x "$SPARKLE_BIN/sign_update" ]; then
-    echo "$SPARKLE_BIN/sign_update が見つかりません。ビルドで SPM の解決が済んでいるはずですが、" >&2
-    echo "見つからない場合は: xcodebuild -project Ttemp.xcodeproj -scheme Ttemp -derivedDataPath build/DerivedData -resolvePackageDependencies" >&2
+    echo "$SPARKLE_BIN/sign_update が見つかりません。SPM の解決が必要です:" >&2
+    echo "  xcodebuild -project Ttemp.xcodeproj -scheme Ttemp -derivedDataPath build/DerivedData -resolvePackageDependencies" >&2
     exit 1
 fi
-ED_PARAMS=$("$SPARKLE_BIN/sign_update" dist/Ttemp.zip)   # sparkle:edSignature="…" length="…"
+if [ -n "${TTEMP_ED_KEY_FILE:-}" ]; then
+    ED_PARAMS=$("$SPARKLE_BIN/sign_update" --ed-key-file "$TTEMP_ED_KEY_FILE" dist/Ttemp.zip)
+else
+    ED_PARAMS=$("$SPARKLE_BIN/sign_update" dist/Ttemp.zip)
+fi
 DOWNLOAD_URL="https://github.com/RioRio-do/ttemp/releases/download/v$VERSION/Ttemp.zip"
 PUB_DATE=$(LC_ALL=C date "+%a, %d %b %Y %H:%M:%S %z")
 
-cat > appcast.xml <<EOF
+cat > dist/appcast.xml <<EOF
 <?xml version="1.0" encoding="utf-8"?>
 <rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
     <channel>
@@ -71,9 +81,5 @@ cat > appcast.xml <<EOF
 </rss>
 EOF
 
-echo "完了: dist/Ttemp.zip (Ttemp $VERSION, build $BUILD, identity: $IDENTITY)"
-echo
-echo "次にやること:"
-echo "  git add appcast.xml && git commit -m \"v$VERSION の appcast\" && git push"
-echo "  gh release create \"v$VERSION\" dist/Ttemp.zip --title \"Ttemp $VERSION\""
-echo "（appcast は更新の存在を CFBundleVersion=$BUILD の大小で判定する。リリースごとに必ず上げること）"
+echo "完了: dist/Ttemp.zip + dist/appcast.xml (Ttemp $VERSION, build $BUILD, identity: $IDENTITY)"
+echo "手動でリリースする場合: gh release create \"v$VERSION\" dist/Ttemp.zip dist/appcast.xml --title \"Ttemp $VERSION\""

@@ -20,12 +20,11 @@ xcodegen generate
 xcodebuild -project Ttemp.xcodeproj -scheme Ttemp -configuration Release build
 ```
 
-配布用の署名済み zip を作る場合は [docs/SIGNING.md](docs/SIGNING.md) を参照:
+## リリース
 
-```bash
-./scripts/create-signing-cert.sh   # 初回のみ
-./scripts/build-release.sh         # dist/Ttemp.zip ができる
-```
+main へ push するだけ。CI（GitHub Actions）がテスト → バージョン採番 →
+署名 → GitHub Release 作成まで全自動で行う。鍵のセットアップ（一度だけ）や
+仕組みの詳細は [docs/SIGNING.md](docs/SIGNING.md) を参照。
 
 ## テスト
 

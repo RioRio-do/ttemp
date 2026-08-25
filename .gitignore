@@ -13,9 +13,11 @@ Ttemp.xcodeproj/
 *.xcuserdatad/
 xcuserdata/
 
-# 署名用の秘密鍵・証明書（scripts/create-signing-cert.sh の出力）
+# 署名用の秘密鍵・証明書（絶対にコミットしない）
 *.p12
 *.pem
+# リリース鍵一式（scripts/setup-release-keys.sh の出力）
+signing/
 
 # このリポジトリと無関係な作業ファイル
 tasogare_zankyo.strudel.js

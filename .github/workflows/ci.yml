@@ -1,0 +1,109 @@
+# CI/CD（docs/SIGNING.md）
+#
+# - PR と main への push: ビルドとテスト
+# - main への push（テスト通過後）: 全自動リリース
+#     バージョン採番（major.minor は project.yml、patch はコミット数）
+#     → 「Ttemp Signing」で安定署名 → EdDSA 署名つき appcast 生成
+#     → GitHub Release 作成（Ttemp.zip + appcast.xml をアセットとして添付）
+#   リリースしたくない push はコミットメッセージに [skip release] を入れる。
+#
+# 必要なシークレット（scripts/setup-release-keys.sh が登録する）:
+#   SIGNING_CERT_P12 / SIGNING_CERT_PASSWORD / SPARKLE_ED_PRIVATE_KEY
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: ビルドとテスト
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: XcodeGen を入れる
+        run: brew install xcodegen
+      - name: テスト
+        run: |
+          xcodegen generate
+          xcodebuild -project Ttemp.xcodeproj -scheme TtempTests \
+            -destination 'platform=macOS' -derivedDataPath build/DerivedData test
+
+  release:
+    name: リリース
+    needs: test
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      !contains(github.event.head_commit.message, '[skip release]')
+    runs-on: macos-15
+    permissions:
+      contents: write
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # コミット数からバージョンを採番するため全履歴が要る
+          fetch-depth: 0
+
+      - name: XcodeGen を入れる
+        run: brew install xcodegen
+
+      - name: バージョンを決める
+        id: version
+        run: |
+          BASE=$(grep -m1 'MARKETING_VERSION:' project.yml | sed -E 's/.*"([0-9]+\.[0-9]+).*/\1/')
+          BUILD=$(git rev-list --count HEAD)
+          echo "version=$BASE.$BUILD" >> "$GITHUB_OUTPUT"
+          echo "build=$BUILD" >> "$GITHUB_OUTPUT"
+          echo "リリース: v$BASE.$BUILD (build $BUILD)"
+
+      - name: 署名用キーチェーンを用意
+        env:
+          SIGNING_CERT_P12: ${{ secrets.SIGNING_CERT_P12 }}
+          SIGNING_CERT_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}
+        run: |
+          if [ -z "$SIGNING_CERT_P12" ]; then
+            echo "SIGNING_CERT_P12 が未設定。scripts/setup-release-keys.sh を実行すること" >&2
+            exit 1
+          fi
+          KEYCHAIN="$RUNNER_TEMP/release.keychain-db"
+          KEYCHAIN_PASSWORD=$(uuidgen)
+          echo "$SIGNING_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 3600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
+            -P "$SIGNING_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S "apple-tool:,apple:,codesign:" \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          # 自己署名証明書なので、明示的に信頼させないと codesign の検証が通らない
+          openssl pkcs12 -in "$RUNNER_TEMP/cert.p12" -passin "pass:$SIGNING_CERT_PASSWORD" \
+            -clcerts -nokeys -out "$RUNNER_TEMP/cert.pem"
+          sudo security add-trusted-cert -d -r trustRoot \
+            -k /Library/Keychains/System.keychain "$RUNNER_TEMP/cert.pem"
+          echo "TTEMP_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+
+      - name: リリースビルドと appcast 生成
+        env:
+          TTEMP_VERSION: ${{ steps.version.outputs.version }}
+          TTEMP_BUILD: ${{ steps.version.outputs.build }}
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+        run: |
+          umask 077
+          printf '%s' "$SPARKLE_ED_PRIVATE_KEY" > "$RUNNER_TEMP/ed_key"
+          TTEMP_ED_KEY_FILE="$RUNNER_TEMP/ed_key" ./scripts/build-release.sh
+          rm -f "$RUNNER_TEMP/ed_key"
+
+      - name: GitHub Release を作る
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ steps.version.outputs.version }}" \
+            dist/Ttemp.zip dist/appcast.xml \
+            --title "Ttemp ${{ steps.version.outputs.version }}" \
+            --generate-notes
