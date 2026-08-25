@@ -69,6 +69,7 @@ Ttemp は macOS 14 以降で動く、メニューバー常駐型の一時メモ�
 - 左右 Shift 成立または `新規メモ / New Note` で新規ノートを作る。
 - 生成時はアプリを明示的に activate し、他アプリより前へ出してキーウィンドウにし、編集ビューを first responder にする。
 - 新規ウィンドウのピン状態は §9 の既定値から決める。復元ウィンドウは保存値を使う。
+- 表示・未復元を合わせたノート上限は32枚。上限で新規作成を要求された場合はbeepだけで知らせ、状態を変更しない。
 - ステータス項目の左クリックと多重起動通知は既存の全ウィンドウを前面へ出し、最後の1枚を key にする。ウィンドウが0枚ならフォーカスを奪わない。
 
 ### 3.2 空ウィンドウの自動消滅
@@ -136,6 +137,7 @@ Ttemp は macOS 14 以降で動く、メニューバー常駐型の一時メモ�
 - Tab はフォーカス移動ではなく `\t` を入力する。Return は改行を入力する。Escape は閉じる。
 - smart quotes/dashes、automatic text replacement、data detection、自動リンク、spell correction など本文を勝手に変える機能を無効にする。
 - 保存内容は属性を持たない文字列とする。
+- 本文は1ノート262,144 UTF-16 code unitまで。通常入力、IME、置換、paste、復元へ同じ上限を適用し、超過する編集はshakeして拒否する。編集時は既存全文を複製せず、`NSRange`の差分長で判定する。
 
 ### 5.2 フォントとリンク
 
@@ -159,6 +161,7 @@ Ttemp は macOS 14 以降で動く、メニューバー常駐型の一時メモ�
 4. 何も取り出せなければ無操作。
 
 画像と plain text が混在する場合はテキストを優先する。HTML の存在だけでは plain text 混在とみなさない。
+優先順位が確定した時点で返し、使わない下位表現をpasteboardからmaterializeしない。上限超過のtext/image dataはunsupportedとして拒否する。
 
 ## 6. 画像モード
 
@@ -190,6 +193,7 @@ Ttemp は macOS 14 以降で動く、メニューバー常駐型の一時メモ�
 - ペースト、ドラッグ＆ドロップ、空テキスト時の `画像を選択… / Choose Image…` を受け付ける。
 - 複数 file URL は最初の画像ファイル1枚だけを使う。非画像ファイルは拒否する。
 - 原本バイト列の読み込み、形式判定、永続化は background queue で行い、メインスレッドを塞がない。
+- file URLはsymbolic linkではないregular fileだけを受け付け、属性確認後も実読込byte数を再確認する。encoded dataは64 MiB以下、ImageIO frame数は100以下、全frameの累積pixel数は64,000,000以下とし、decode・保存より前に拒否する。
 - ファイル拡張子より実バイトの ImageIO type を正とし、判定不能時のみ入力の拡張子ヒントを使う。
 - 取り込みには世代 ID を付ける。後発の画像、文字入力、画像削除、close が先行処理を無効化し、不要となった保存済み原本を回収する。
 - 画像の選択 sheet または受理済み background import 中は、見かけ上空でも focus-out 自動消滅させない。
@@ -205,8 +209,8 @@ Ttemp は macOS 14 以降で動く、メニューバー常駐型の一時メモ�
 - 原本バイト列を `Images/<UUID>.<ext>` に atomic write し、表示用画像と分離する。
 - 原本読み込みは可能なら memory mapping を使う。
 - 単一フレーム画像で最大辺が4096 pixelを超える場合、表示用だけを4096 pixel以内へ ImageIO で downsample する。論理サイズは原本と同じにする。
-- GIF/APNG/WebP など複数 frame の画像は animation 保持のため downsample しない。
-- downsample 不能なら file-backed `NSImage` へフォールバックする。
+- GIF/APNG/WebP など複数 frame の画像は§6.3のframe/pixel上限内に限り、animation 保持のため downsample しない。
+- 上限を超える画像、ImageIOで実画像と判定できないdata、巨大静止画のdownsampleに失敗した画像はfile-backed原寸decodeへフォールバックせず拒否する。
 
 ## 7. 文字サイズ
 
@@ -310,6 +314,7 @@ LSUIElement でも responder chain の標準キー操作を成立させるため
 画像 content は `{ "kind": "image", "image": { "id": "UUID", "fileExtension": "png" } }` とし、原本は `Images/<UUID>.<ext>` に置く。拡張子は小文字ASCII英数字1〜16文字だけを許し、それ以外を `dat` へ正規化して path traversal と任意拡張子を防ぐ。
 
 ノートの並び順は `notes` 配列順。frame、pin、未 clamp の offset をそのまま保存する。
+stateはsymbolic linkではないregular file、64 MiB以下、32ノート以下、重複しないnote ID、有限frame、§5.1以内のtextを必須とする。loadとsaveの両方で同じ条件を検証する。
 
 次は `UserDefaults` またはシステム側へ分離し `state.json` に入れない。
 
@@ -331,7 +336,7 @@ LSUIElement でも responder chain の標準キー操作を成立させるため
 
 ### 10.4 破損・未知バージョン・孤児画像
 
-- 読み取り不能な `state.json` は `state.json.corrupt-YYYYMMDD-HHmmss[-N]`、未知 version は `state.json.version-<version>-YYYYMMDD-HHmmss[-N]` へ rename し、空の表示状態で起動する。
+- 読み取り不能な `state.json` は `state.json.corrupt-YYYYMMDD-HHmmss[-N]`、上限・構造違反は`state.json.invalid-YYYYMMDD-HHmmss[-N]`、未知 version は `state.json.version-<version>-YYYYMMDD-HHmmss[-N]` へ rename し、空の表示状態で起動する。state本文は上限+1 byteだけをbounded readし、file sizeの競合で無制限に確保しない。
 - quarantine できない場合も crash せず空で起動する。
 - state を読めなかったセッションでは画像 prune を禁止し、回収可能性を残す。
 - 正常保存後、参照集合が前回成功時から変化した場合だけ `Images/` を走査する。
@@ -382,6 +387,7 @@ Input Monitoring は §2 の listen-only key/mouse event 検出だけに使う�
 - Swift 5、AppKit、macOS deployment target 14.0。
 - project generator は XcodeGen、定義は `project.yml`。生成物 `Ttemp.xcodeproj` は source of truth ではない。
 - Product name `Ttemp`、Bundle ID `com.am921.ttemp`、marketing version `0.1.0`、build version `1`。development languageは`en`、`CFBundleLocalizations`は`en`と`ja`。
+- Swift compiler warningはDebug/Releaseともerrorとして扱う。
 - App Sandbox は無効。Hardened Runtime は有効。現行配布は ad-hoc/self signing を前提とする。
 - Release は `-Osize`、LTO、dead-code stripping、post-processing、reflection metadata `none`。
 - AppIcon は asset catalog の10 renditionを全て持ち、16〜1024 pixelの必要 slotを欠かさない。
@@ -389,26 +395,30 @@ Input Monitoring は §2 の listen-only key/mouse event 検出だけに使う�
 
 ### 12.3 Sparkle と network
 
-- 自動更新は Sparkle 2.9.6 を exact pin する。
+- 自動更新は Sparkle 2.9.6 のcommit `ac2def288cbff5cfc7df3ffef6abdf45b72bcb0a`をrevision pinする。
 - feed は `https://github.com/RioRio-do/ttemp/releases/latest/download/appcast.xml`。
 - EdDSA public key は `XQCyVcCJKpfIsIS9umCNonEODMKebjLmi+3ZhntQkS4=`。秘密鍵を repository、build log、artifact に含めない。
 - automatic checks と automatic update を有効にする。
+- `SURequireSignedFeed`と`SUVerifyUpdateBeforeExtraction`を有効にし、appcast自体のEdDSA署名とarchive署名を展開前に必須とする。
 - updater は単一インスタンス確認後にだけ開始する。manual check 前に app を activate し、dialog が背面に出ないようにする。
 - repository link は `https://github.com/RioRio-do/ttemp`。About panel と status menu から開ける。
 - 通常のノート機能は network を必要としない。network access は Sparkle update check/download と、ユーザーが明示した GitHub page open に限る。
 
 ### 12.4 Release
 
-- `scripts/build-release.sh` は署名済みRelease appから、初回インストール用`Ttemp.dmg`、Sparkle更新用`Ttemp.zip`、EdDSA signature、`appcast.xml`を再現可能な手順で生成する。
+- `scripts/build-release.sh` はtracked fileがcleanなcommitからだけ実行し、署名済みRelease app、初回インストール用`Ttemp.dmg`、Sparkle更新用`Ttemp.zip`、各EdDSA signature、署名済み`appcast.xml`、`SHA256SUMS`を再現可能な手順で生成する。
 - DMGは660×400 pointのFinder icon viewとし、背景の文字は`Ttemp`だけ、中央に右向き矢印を置く。左に`Ttemp.app`、右に`/Applications`を指す`Applications` symlinkを置き、言語依存の注釈は表示しない。
 - DMG生成時は一時HFS+ imageのFinder設定を保存してからUDZOへ圧縮する。checksum、`Ttemp.app`、Applications symlink、背景、`.DS_Store`、内部appのcode signatureを公開前に検証し、作業中に作られる`.fseventsd`やSpotlight管理情報を配布物へ含めない。
-- ZIPはSparkle enclosure専用とし、appcastはDMGではなく`Ttemp.zip`を参照する。ZIP EdDSA signature、appcast XML、archive lengthを公開前に再検証する。
-- GitHub Releaseには`Ttemp.dmg`、`Ttemp.zip`、`appcast.xml`を添付し、READMEではDMGを通常ユーザー向けのダウンロードとして案内する。
+- ZIPはSparkle enclosure専用とし、appcastはDMGではなく`Ttemp.zip`を参照する。ZIP EdDSA signature、appcast XMLとそのEdDSA signature、archive lengthを公開前に再検証する。
+- GitHub Releaseには`Ttemp.dmg`、`Ttemp.zip`、`appcast.xml`、`SHA256SUMS`を添付し、READMEではDMGを通常ユーザー向けのダウンロードとして案内する。checksumは破損・取り違え検出用で、publisherの独立認証とは表現しない。
+- 初回artifactは自己署名・未公証であることをREADMEへ明示し、canonical GitHub Release以外からの取得を案内しない。Gatekeeperに止められた場合の導線はApplications内のappを右クリックして`開く / Open`だけとし、quarantine属性をcommandで削除させない。Developer ID署名とApple公証へ移行するまで、macOSが初回配布元をpublisherまで検証できないリスクを残存事項として扱う。
 - 公開READMEは日本語の`README.md`と英語の`README.en.md`を分け、同じ行へ日英を重ねない。
 - Release buildは、symlink解決・path標準化後のbundle URLが`/Applications`の真の子でなければruntimeを初期化しない。alertはtitleを`Ttemp を Applications へ / Move Ttemp to Applications`、本文を移動後に再度開く旨の1文、buttonを`Finder で表示 / Show in Finder`と`終了 / Quit`だけにする。要求時は現在のappをFinderで表示して終了する。Debug buildは開発場所から実行できるようこの制約を適用しない。
 - `scripts/setup-release-keys.sh` と `docs/SIGNING.md` を signing/setup の運用手順とする。
 - 既存 PKCS#12 は certificate/private key を保持したまま macOS 15 の Security.framework と互換なコンテナへ再梱包し、certificate SHA-256 fingerprint の一致を置換条件とする。
 - CI の signing certificate は repository secrets から Release job 専用の使い捨て user keychain へ取り込み、user/System trust store は変更しない。PKCS#12 の復号、certificate CN と fingerprint の一致を確認し、fingerprint を Xcode の signing identity として明示する。秘密鍵ACLは当該job内の全processに限って開き、keychainと復号済みファイルは成功・失敗を問わずcleanupする。
+- CIはXcodeGen 2.46.0の公式release assetをSHA-256 `4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806`で検証して使う。workflow既定権限は`contents: read`、checkoutはcredentialを永続化せず、Release jobだけ`contents: write`を持つ。
+- Release作成前に既存tagがbuilt `GITHUB_SHA`と異なれば失敗し、`gh release create --target "$GITHUB_SHA"`でartifactとsource commitを固定する。
 - Release の明示的な抑止は、main へ push された最後の commit の件名が `[skip release]` で始まる場合に限る。
 - GitHub Actions は main 更新を起点に build/test/release を行う場合でも、秘密鍵を repository へ書き出さず、公開 asset の signature を検証可能に保つ。
 
@@ -423,8 +433,8 @@ unit test は App host を起動せず、次の純粋ロジックと永続化境
 - plain text sanitize と pasteboard priority/mode transition。
 - global/offset font model、shortcut、modifier migration。
 - image point sizing、format list、actual ImageIO conversion。
-- image store の原本保持、形式判定、display image。
-- state round-trip、debounce/max-delay、monotonic clock、retry、quarantine、extension normalization/path traversal 防止、managed-file 限定 prune。
+- image store の原本保持、形式判定、regular-file/byte/frame/pixel上限、display image。
+- state round-trip、debounce/max-delay、monotonic clock、retry、byte/note/text/ID上限、quarantine、extension normalization/path traversal 防止、managed-file 限定 prune。
 - 日本語/英語選択と pin-mode migration。
 - Applications配下判定のdirect/nested path、DMG path、類似prefix、境界値。
 
@@ -432,7 +442,7 @@ unit test は App host を起動せず、次の純粋ロジックと永続化境
 
 CI は少なくとも次を行う。
 
-1. XcodeGen で project を生成する。
+1. 固定versionとSHA-256を検証したXcodeGenでprojectを生成し、Sparkleの固定revisionを解決する。
 2. code signing を無効化した Debug app build を明示的に成功させる。
 3. `TtempTests` を実行して全 test を成功させる。
 4. Release workflow では Release build、DMG/ZIP/appcastの存在・構造・署名情報を検証する。
@@ -463,6 +473,9 @@ OS/TCC/AppKit UI 依存で unit test 化しにくい項目は release 前に実�
 | global font | 既定14、9〜48 pt、step 1 |
 | scroll threshold | coarse 3、precise 24 |
 | 表示画像 downsample | 最大辺4096 pixel超 |
+| 本文 / ノート数 | 262,144 UTF-16 code unit / 32枚 |
+| 画像取込 | encoded 64 MiB、100 frame、累積64,000,000 pixel |
+| state読込 | 64 MiB |
 | JPEG/HEIC quality | 0.9 |
 | menu title / thumbnail | 30文字 / 48×16 pt |
 | state save | debounce 1秒、最大遅延5秒、retry 5秒 |

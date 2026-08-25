@@ -5,8 +5,8 @@ packages:
   # Apple Developer アカウントは不要（アプリ本体は自己署名のまま）
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
-    # 更新機構は配布物を扱う高信頼境界なので、CI/Release の再現性を保つため厳密に固定する。
-    exactVersion: "2.9.6"
+    # 2.9.6 のtagではなく、監査済みの不変commitへ固定する。
+    revision: ac2def288cbff5cfc7df3ffef6abdf45b72bcb0a
 
 options:
   bundleIdPrefix: com.am921
@@ -19,6 +19,7 @@ options:
 settings:
   base:
     SWIFT_VERSION: "5.0"
+    SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
     ALWAYS_SEARCH_USER_PATHS: NO

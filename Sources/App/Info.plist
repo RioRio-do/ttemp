@@ -40,6 +40,11 @@
 	     更新パッケージの検証はこの鍵で行うため Apple Developer アカウントは不要 -->
 	<key>SUPublicEDKey</key>
 	<string>XQCyVcCJKpfIsIS9umCNonEODMKebjLmi+3ZhntQkS4=</string>
+	<!-- appcast自体にもEdDSA署名を要求し、展開前にupdate archiveを検証する -->
+	<key>SURequireSignedFeed</key>
+	<true/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
 	<!-- 初回起動時の「自動チェックを有効にしますか」ダイアログを出さず、最初から有効にする -->
 	<key>SUEnableAutomaticChecks</key>
 	<true/>

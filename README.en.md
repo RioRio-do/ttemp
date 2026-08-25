@@ -13,7 +13,7 @@ Press both Shift keys for a scratch note.
 
 [Download Ttemp.dmg](https://github.com/RioRio-do/ttemp/releases/latest/download/Ttemp.dmg), then drag Ttemp to Applications.
 
-Ttemp is self-signed. If macOS blocks the first launch, right-click Ttemp in Applications and choose Open.
+Ttemp is self-signed and not notarized. Download it only from the official GitHub Release above; if macOS blocks the first launch, right-click Ttemp in Applications and choose Open.
 
 ## Input Monitoring
 
@@ -41,6 +41,7 @@ See [docs/SIGNING.md](docs/SIGNING.md) for keys and verification.
 
 - [SPEC.md](SPEC.md) — Specification
 - [docs/SIGNING.md](docs/SIGNING.md) — Signing, updates, and releases
+- [SECURITY.md](SECURITY.md) — Private vulnerability reporting
 
 ## License
 
