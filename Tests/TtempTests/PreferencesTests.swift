@@ -61,4 +61,3 @@ final class PreferencesTests: XCTestCase {
         XCTAssertEqual(Preferences(defaults: defaults).newWindowPinMode, .unpinned)
     }
 }
-

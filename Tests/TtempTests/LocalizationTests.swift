@@ -68,4 +68,3 @@ final class LocalizationTests: XCTestCase {
                        "Original (GIF)")
     }
 }
-
