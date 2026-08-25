@@ -2,7 +2,7 @@
 
 [日本語](README.md)
 
-A scratch note with both Shift keys.
+Press both Shift keys for a scratch note.
 
 - Copies to the clipboard when closed
 - Supports text and images
