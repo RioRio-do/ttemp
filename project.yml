@@ -80,6 +80,7 @@ targets:
       - path: Sources/Util/FontSizeShortcut.swift
       - path: Sources/Settings/LocalModifier.swift
       - path: Sources/Util/L10n.swift
+      - path: Sources/App/ApplicationLocation.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.am921.ttemp.tests
