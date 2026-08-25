@@ -51,10 +51,15 @@ main へ push すると:
      更新判定に使う整数）も同じ値で自動的に増える。**手でバージョンを
      上げる作業は存在しない**。メジャー/マイナーを上げたいときだけ
      project.yml の `MARKETING_VERSION` を書き換える
-3. 使い捨てのユーザーキーチェーンへ証明書を取り込み、System keychain を変更せずに
-   安定署名し、EdDSA 署名つき appcast.xml を生成。app の code signature、ZIP の
-   EdDSA signature、appcast XML と archive length を公開前に再検証
+3. 使い捨てのユーザーキーチェーンへ証明書を取り込み、user/System trust store を
+   変更せず証明書 fingerprint を直接指定して安定署名し、EdDSA 署名つき appcast.xml
+   を生成。app の code signature、ZIP の EdDSA signature、appcast XML と archive
+   length を公開前に再検証
 4. `vX.Y.N` の GitHub Release を作成し、`Ttemp.zip` と `appcast.xml` を添付
+
+CI では headless のGUI確認を避けるため、一時キーチェーン内の秘密鍵ACLを
+その job の全processへ開く。キーチェーンと復号済みファイルは Release job 専用で、
+成功・失敗にかかわらず最後の cleanup step で削除する。
 
 アプリ側の `SUFeedURL` は
 `https://github.com/RioRio-do/ttemp/releases/latest/download/appcast.xml`

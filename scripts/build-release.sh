@@ -15,7 +15,13 @@ cd "$(dirname "$0")/.."
 
 IDENTITY="${TTEMP_SIGN_IDENTITY:-Ttemp Signing}"
 
-if ! security find-identity -v -p codesigning ${TTEMP_KEYCHAIN:+"$TTEMP_KEYCHAIN"} | grep -Fq "\"$IDENTITY\""; then
+if [ -n "${TTEMP_KEYCHAIN:-}" ] && [[ "$IDENTITY" =~ ^[0-9A-Fa-f]{40}$ ]]; then
+    # CIの自己署名証明書はheadless trust設定を避けるため、fingerprintで直接選択する。
+    if ! security find-certificate -a -Z "$TTEMP_KEYCHAIN" | grep -Fiq "SHA-1 hash: $IDENTITY"; then
+        echo "コード署名 certificate '$IDENTITY' が $TTEMP_KEYCHAIN に見つかりません。" >&2
+        exit 1
+    fi
+elif ! security find-identity -v -p codesigning ${TTEMP_KEYCHAIN:+"$TTEMP_KEYCHAIN"} | grep -Fq "\"$IDENTITY\""; then
     echo "コード署名 identity '$IDENTITY' が見つかりません。" >&2
     echo "先に ./scripts/setup-release-keys.sh を実行してください。" >&2
     exit 1

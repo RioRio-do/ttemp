@@ -68,6 +68,7 @@ jobs:
           echo "リリース: v$BASE.$BUILD (build $BUILD)"
 
       - name: 署名用キーチェーンを用意
+        timeout-minutes: 2
         env:
           SIGNING_CERT_P12: ${{ secrets.SIGNING_CERT_P12 }}
           SIGNING_CERT_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}
@@ -87,20 +88,28 @@ jobs:
           openssl pkcs12 -in "$RUNNER_TEMP/cert.p12" \
             -passin env:SIGNING_CERT_PASSWORD -noout
 
+          echo "==> 使い捨てキーチェーンを作成"
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
           security set-keychain-settings -lut 3600 "$KEYCHAIN"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+
+          # runner専用の使い捨てkeychainなので、秘密鍵のACLは全processへ開く。
+          # これによりGUI確認が必要なpartition-list変更を避けられる。
+          echo "==> PKCS#12 identityを取り込み"
           security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
-            -P "$SIGNING_CERT_PASSWORD" -T /usr/bin/codesign
-          security set-key-partition-list -S "apple-tool:,apple:,codesign:" \
-            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
+            -P "$SIGNING_CERT_PASSWORD" -A -T /usr/bin/codesign
           security list-keychains -d user -s "$KEYCHAIN" "$HOME/Library/Keychains/login.keychain-db"
 
-          # runnerのSystem keychainは変更せず、使い捨てkeychain内だけでcodesignを信頼する。
+          # macOS 15のheadless runnerではtrust変更がGUI認証待ちになるため、user/Systemの
+          # trust storeは一切変更しない。証明書fingerprintをXcodeへ直接渡して署名する。
           openssl pkcs12 -in "$RUNNER_TEMP/cert.p12" -passin env:SIGNING_CERT_PASSWORD \
             -clcerts -nokeys -out "$RUNNER_TEMP/cert.pem"
-          security add-trusted-cert -p codeSign -k "$KEYCHAIN" "$RUNNER_TEMP/cert.pem"
-          security find-identity -v -p codesigning "$KEYCHAIN" | grep -Fq '"Ttemp Signing"'
+          grep -Fq 'CN=Ttemp Signing' <(openssl x509 -in "$RUNNER_TEMP/cert.pem" -noout -subject -nameopt RFC2253)
+          SIGN_IDENTITY=$(openssl x509 -in "$RUNNER_TEMP/cert.pem" -noout -fingerprint -sha1 | sed 's/^.*=//; s/://g')
+          [[ "$SIGN_IDENTITY" =~ ^[0-9A-F]{40}$ ]]
+          security find-certificate -a -Z "$KEYCHAIN" | grep -Fq "SHA-1 hash: $SIGN_IDENTITY"
+          echo "TTEMP_SIGN_IDENTITY=$SIGN_IDENTITY" >> "$GITHUB_ENV"
+          echo "==> 署名identity fingerprintを確認"
 
       - name: リリースビルドと appcast 生成
         env:
