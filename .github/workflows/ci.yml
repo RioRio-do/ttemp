@@ -23,7 +23,12 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: XcodeGen を入れる
-        run: brew install xcodegen
+        run: |
+          # macOS hosted runnerに残る未信頼tap。Homebrewの推奨どおり使わないtapを外す。
+          if brew tap | grep -Fxq 'aws/tap'; then
+            brew untap aws/tap
+          fi
+          brew install xcodegen
       - name: アプリをビルド
         run: |
           xcodegen generate
@@ -56,7 +61,11 @@ jobs:
           fetch-depth: 0
 
       - name: XcodeGen を入れる
-        run: brew install xcodegen
+        run: |
+          if brew tap | grep -Fxq 'aws/tap'; then
+            brew untap aws/tap
+          fi
+          brew install xcodegen
 
       - name: バージョンを決める
         id: version
