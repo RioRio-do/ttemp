@@ -1,3 +1,4 @@
+import ImageIO
 import XCTest
 
 /// SPEC §6.2 のウィンドウサイズ計算と §8.2 の保存形式のテスト。
@@ -40,6 +41,12 @@ final class ImageSizingTests: XCTestCase {
         XCTAssertEqual(ImageWindowSizing.contentSize(forImagePointSize: CGSize(width: -10, height: 10),
                                                      visibleFrame: screen),
                        ImageWindowSizing.minContentSize)
+        XCTAssertEqual(ImageWindowSizing.contentSize(forImagePointSize: CGSize(width: CGFloat.nan, height: 10),
+                                                     visibleFrame: screen),
+                       ImageWindowSizing.minContentSize)
+        XCTAssertEqual(ImageWindowSizing.contentSize(forImagePointSize: CGSize(width: 10, height: CGFloat.infinity),
+                                                     visibleFrame: screen),
+                       ImageWindowSizing.minContentSize)
     }
 
     // MARK: - 保存（SPEC §8.2）
@@ -55,15 +62,20 @@ final class ImageSizingTests: XCTestCase {
     }
 
     func test_元形式が判別できるときだけ元の形式を出す() {
-        let withOriginal = ImageExporter.availableFormats(originalExtension: "gif")
+        let withOriginal = ImageExporter.availableFormats(originalExtension: "gif", supportsHEIC: true)
         XCTAssertEqual(withOriginal.first, .original(fileExtension: "gif"))
         XCTAssertEqual(withOriginal.count, 5)
 
-        let withoutOriginal = ImageExporter.availableFormats(originalExtension: nil)
+        let withoutOriginal = ImageExporter.availableFormats(originalExtension: nil, supportsHEIC: true)
         XCTAssertEqual(withoutOriginal, [.png, .jpeg, .heic, .tiff])
 
         // 判別できなかった場合の dat は出さない
-        XCTAssertEqual(ImageExporter.availableFormats(originalExtension: "dat"), [.png, .jpeg, .heic, .tiff])
+        XCTAssertEqual(ImageExporter.availableFormats(originalExtension: "dat", supportsHEIC: true),
+                       [.png, .jpeg, .heic, .tiff])
+        XCTAssertEqual(ImageExporter.availableFormats(originalExtension: "../../png", supportsHEIC: false),
+                       [.png, .jpeg, .tiff])
+        XCTAssertEqual(ImageExporter.availableFormats(originalExtension: nil, supportsHEIC: false),
+                       [.png, .jpeg, .tiff])
     }
 
     func test_元の形式のままは再エンコードしない() {
@@ -78,5 +90,24 @@ final class ImageSizingTests: XCTestCase {
         XCTAssertEqual(ImageExportFormat.heic.fileExtension, "heic")
         XCTAssertEqual(ImageExportFormat.tiff.fileExtension, "tiff")
         XCTAssertEqual(ImageExportFormat.original(fileExtension: "webp").fileExtension, "webp")
+    }
+
+    func test_実画像を各形式へ変換できる() throws {
+        // 1x1 PNG。ファイル入出力を挟まず ImageIO 変換そのものを検証する。
+        let source = try XCTUnwrap(Data(base64Encoded:
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="))
+        var formats: [ImageExportFormat] = [.png, .jpeg, .tiff]
+        if ImageExporter.canEncodeHEIC {
+            formats.append(.heic)
+        }
+
+        for format in formats {
+            let converted = try XCTUnwrap(ImageExporter.encode(originalData: source, to: format),
+                                          "\(format) へ変換できること")
+            let imageSource = try XCTUnwrap(CGImageSourceCreateWithData(converted as CFData, nil))
+            XCTAssertEqual(CGImageSourceGetCount(imageSource), 1)
+            XCTAssertEqual(CGImageSourceGetType(imageSource) as String?, format.utType?.identifier)
+        }
+        XCTAssertNil(ImageExporter.encode(originalData: Data([0, 1, 2]), to: .png))
     }
 }

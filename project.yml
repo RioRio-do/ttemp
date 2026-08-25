@@ -5,7 +5,8 @@ packages:
   # Apple Developer アカウントは不要（アプリ本体は自己署名のまま）
   Sparkle:
     url: https://github.com/sparkle-project/Sparkle
-    from: "2.6.0"
+    # 更新機構は配布物を扱う高信頼境界なので、CI/Release の再現性を保つため厳密に固定する。
+    exactVersion: "2.9.6"
 
 options:
   bundleIdPrefix: com.am921
@@ -50,7 +51,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.am921.ttemp
         GENERATE_INFOPLIST_FILE: NO
         INFOPLIST_FILE: Sources/App/Info.plist
-        # SPEC §11.2: 入力監視権限は App Sandbox 内では取得できない
+        # 現行配布は自己署名・Sparkle更新を含む非Sandbox構成。入力監視はTCCで別途許可を得る。
         ENABLE_APP_SANDBOX: NO
         # SPEC §12: 最初から有効化しておく（後付けは権限周りの再検証が必要）
         ENABLE_HARDENED_RUNTIME: YES
@@ -75,6 +76,7 @@ targets:
       - path: Sources/Util/PasteboardReader.swift
       - path: Sources/Util/ImageWindowSizing.swift
       - path: Sources/Util/ImageExporter.swift
+      - path: Sources/Util/ImageStore.swift
       - path: Sources/Util/FontSizeShortcut.swift
       - path: Sources/Settings/LocalModifier.swift
       - path: Sources/Util/L10n.swift

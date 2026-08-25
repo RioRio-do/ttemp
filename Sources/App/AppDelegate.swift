@@ -18,9 +18,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
     private lazy var onboardingController = OnboardingWindowController(preferences: preferences)
     /// 自動更新（docs/SIGNING.md）。生成した時点で定期チェックが動き出す
-    private let updaterController = SPUStandardUpdaterController(startingUpdater: true,
-                                                                 updaterDelegate: nil,
-                                                                 userDriverDelegate: nil)
+    private lazy var updaterController = SPUStandardUpdaterController(startingUpdater: true,
+                                                                      updaterDelegate: nil,
+                                                                      userDriverDelegate: nil)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard !terminateIfAlreadyRunning() else { return }
@@ -28,6 +28,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // SPEC §1: Dock アイコンなし
         NSApp.setActivationPolicy(.accessory)
         MainMenuBuilder.install()
+        // 多重起動側では updater を開始しない。単一インスタンス確認後にだけ初期化する。
+        _ = updaterController
 
         let statusItem = StatusItemController(windowManager: windowManager)
         statusItem.onOpenSettings = { [weak self] in self?.settingsController.show() }
@@ -168,10 +170,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func terminateIfAlreadyRunning() -> Bool {
         guard let bundleID = Bundle.main.bundleIdentifier else { return false }
+        let current = NSRunningApplication.current
         let others = NSRunningApplication
             .runningApplications(withBundleIdentifier: bundleID)
-            .filter { $0 != .current }
+            .filter { $0 != current }
         guard !others.isEmpty else { return false }
+
+        // ほぼ同時に2プロセスが起動すると、単に「他がいる」で判定した場合は双方が
+        // 相手を見つけて終了し得る。起動日時（同値／取得不能なら PID）で全プロセスが
+        // 同じ勝者を選び、勝者だけが起動を続ける。
+        let winner = ([current] + others).min { lhs, rhs in
+            if let lhsDate = lhs.launchDate, let rhsDate = rhs.launchDate,
+               lhsDate != rhsDate {
+                return lhsDate < rhsDate
+            }
+            return lhs.processIdentifier < rhs.processIdentifier
+        }
+        guard winner?.processIdentifier != current.processIdentifier else { return false }
 
         DistributedNotificationCenter.default().postNotificationName(
             Self.bringAllToFrontNotification,

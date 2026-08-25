@@ -30,7 +30,7 @@ final class ImageStore {
     }
 
     func load(_ reference: ImageReference) -> Data? {
-        try? Data(contentsOf: url(for: reference))
+        try? Data(contentsOf: url(for: reference), options: .mappedIfSafe)
     }
 
     func remove(_ reference: ImageReference) {
@@ -53,8 +53,8 @@ final class ImageStore {
         }
 
         let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any]
-        let pixelWidth = (properties?[kCGImagePropertyPixelWidth] as? CGFloat) ?? 0
-        let pixelHeight = (properties?[kCGImagePropertyPixelHeight] as? CGFloat) ?? 0
+        let pixelWidth = CGFloat((properties?[kCGImagePropertyPixelWidth] as? NSNumber)?.doubleValue ?? 0)
+        let pixelHeight = CGFloat((properties?[kCGImagePropertyPixelHeight] as? NSNumber)?.doubleValue ?? 0)
         guard max(pixelWidth, pixelHeight) > displayMaxPixelSize else {
             return fullImage()
         }

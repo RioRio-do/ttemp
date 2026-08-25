@@ -11,8 +11,8 @@ final class StatusItemController: NSObject {
     /// 「最新版を確認…」。Sparkle の updater（AppDelegate 持ち）に委ねる
     var onCheckForUpdates: (() -> Void)?
 
-    /// SPEC §8.3 の未決事項に対する決定: 一覧のサムネイルは高さ16ptに揃える
-    private static let thumbnailHeight: CGFloat = 16
+    /// 一覧のサムネイルを収める上限。極端な横長画像でもメニュー幅を押し広げない。
+    private static let thumbnailMaxSize = NSSize(width: 48, height: 16)
 
     init(windowManager: WindowManager) {
         self.windowManager = windowManager
@@ -55,10 +55,12 @@ final class StatusItemController: NSObject {
         let image = NSImage(systemSymbolName: symbol, accessibilityDescription: "Ttemp")
         image?.isTemplate = true
         button.image = image
-        button.toolTip = showsPermissionWarning
+        let description = showsPermissionWarning
             ? L10n.pick("Ttemp — 入力監視が未許可のため左右 Shift が反応しません",
                         "Ttemp — Left+Right Shift is disabled: Input Monitoring not allowed")
             : "Ttemp"
+        button.toolTip = description
+        button.setAccessibilityLabel(description)
     }
 
     @objc private func handleClick() {
@@ -167,8 +169,15 @@ final class StatusItemController: NSObject {
     }
 
     private static func scaledThumbnail(_ image: NSImage) -> NSImage {
-        let ratio = image.size.height > 0 ? image.size.width / image.size.height : 1
-        let size = NSSize(width: max(1, thumbnailHeight * ratio), height: thumbnailHeight)
+        let sourceSize = image.size
+        guard sourceSize.width.isFinite, sourceSize.height.isFinite,
+              sourceSize.width > 0, sourceSize.height > 0 else {
+            return NSImage(size: NSSize(width: 1, height: 1))
+        }
+        let scale = min(Self.thumbnailMaxSize.width / sourceSize.width,
+                        Self.thumbnailMaxSize.height / sourceSize.height)
+        let size = NSSize(width: max(1, sourceSize.width * scale),
+                          height: max(1, sourceSize.height * scale))
         // lockFocus はビットマップを1つの解像度で焼き込むため Retina で潰れる。
         // drawingHandler なら描画先のスケールで都度描かれる。
         return NSImage(size: size, flipped: false) { rect in

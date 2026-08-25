@@ -30,6 +30,8 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
     private let scrollView: NSScrollView
     private var imageView: NoteImageView?
     private var imagePayload: ImagePayload?
+    /// 非同期画像取り込みの最新要求。文字入力・削除・後発取り込み・終了で無効化する。
+    private var pendingImageImportID: UUID?
 
     private let imageStore: ImageStore
     private let preferences: Preferences
@@ -67,9 +69,12 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
 
     private var isClosing = false
     private var pinAccessory: NSTitlebarAccessoryViewController?
+    private weak var pinButton: NSButton?
     private var scrollAccumulator: CGFloat = 0
     /// `scrollAccumulator` に積まれているのが精密デルタ（トラックパッド）かどうか
     private var scrollAccumulatorIsPrecise = false
+    /// 累積中の操作スコープ（true=グローバル、false=ローカル）。途中切替時は持ち越さない。
+    private var scrollAccumulatorScope: Bool?
 
     var text: String { textView.string }
 
@@ -104,7 +109,8 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
 
     /// SPEC §10.2: 空ウィンドウは保存対象外
     var snapshot: NoteSnapshot? {
-        guard !isEmpty else { return nil }
+        // フェードアウト中に Quit されても、閉じることを確定したノートを復元しない。
+        guard !isClosing, !isEmpty else { return nil }
         return NoteSnapshot(id: id,
                             content: content,
                             frame: FrameSnapshot(window.frame),
@@ -177,6 +183,10 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
                                                selector: #selector(clipViewFrameChanged),
                                                name: NSView.frameDidChangeNotification,
                                                object: scrollView.contentView)
+        NotificationCenter.default.addObserver(self,
+                                               selector: #selector(languageDidChange),
+                                               name: L10n.didChangeNotification,
+                                               object: nil)
 
         applyFontSize()
     }
@@ -266,6 +276,7 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
         guard let isGlobal = FontSizeShortcut.scrollScope(modifiers: ModifierState(event.modifierFlags),
                                                           localModifier: preferences.localModifier) else {
             scrollAccumulator = 0
+            scrollAccumulatorScope = nil
             return false
         }
 
@@ -275,9 +286,12 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
 
         let isPrecise = event.hasPreciseScrollingDeltas
         // ジェスチャの切れ目とデバイスの切り替わりで持ち越しを捨てる
-        if event.phase.contains(.began) || isPrecise != scrollAccumulatorIsPrecise {
+        if event.phase.contains(.began)
+            || isPrecise != scrollAccumulatorIsPrecise
+            || isGlobal != scrollAccumulatorScope {
             scrollAccumulator = 0
             scrollAccumulatorIsPrecise = isPrecise
+            scrollAccumulatorScope = isGlobal
         }
 
         let threshold = isPrecise ? Self.preciseScrollThreshold : Self.coarseScrollThreshold
@@ -300,33 +314,45 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
     /// 透明タイトルバーの右端に小さなピンアイコンを常時表示し、クリックで解除もできる。
     private func updatePinIndicator() {
         if isPinned {
-            guard pinAccessory == nil else { return }
-            let button = NSButton(image: NSImage(systemSymbolName: "pin.fill",
-                                                 accessibilityDescription:
-                                                    L10n.pick("最前面に固定中", "Pinned on top"))
-                                    ?? NSImage(),
-                                  target: self,
-                                  action: #selector(menuTogglePin))
-            button.isBordered = false
-            button.imageScaling = .scaleProportionallyDown
-            button.toolTip = L10n.pick("最前面に固定中（クリックで解除）",
-                                       "Pinned on top (click to unpin)")
-            button.frame = NSRect(x: 0, y: 0, width: 28, height: 22)
+            if pinAccessory == nil {
+                let button = NSButton(image: NSImage(),
+                                      target: self,
+                                      action: #selector(menuTogglePin))
+                button.isBordered = false
+                button.imageScaling = .scaleProportionallyDown
+                button.frame = NSRect(x: 0, y: 0, width: 28, height: 22)
 
-            let container = NSView(frame: button.frame)
-            container.addSubview(button)
+                let container = NSView(frame: button.frame)
+                container.addSubview(button)
 
-            let accessory = NSTitlebarAccessoryViewController()
-            accessory.view = container
-            accessory.layoutAttribute = .right
-            window.addTitlebarAccessoryViewController(accessory)
-            pinAccessory = accessory
+                let accessory = NSTitlebarAccessoryViewController()
+                accessory.view = container
+                accessory.layoutAttribute = .right
+                window.addTitlebarAccessoryViewController(accessory)
+                pinAccessory = accessory
+                pinButton = button
+            }
+            refreshPinIndicatorLocalization()
         } else if let pinAccessory {
             if let index = window.titlebarAccessoryViewControllers.firstIndex(of: pinAccessory) {
                 window.removeTitlebarAccessoryViewController(at: index)
             }
             self.pinAccessory = nil
+            pinButton = nil
         }
+    }
+
+    @objc private func languageDidChange() {
+        updatePinIndicator()
+    }
+
+    private func refreshPinIndicatorLocalization() {
+        let accessibility = L10n.pick("最前面に固定中", "Pinned on top")
+        pinButton?.image = NSImage(systemSymbolName: "pin.fill",
+                                   accessibilityDescription: accessibility)
+        pinButton?.toolTip = L10n.pick("最前面に固定中（クリックで解除）",
+                                      "Pinned on top (click to unpin)")
+        pinButton?.setAccessibilityLabel(accessibility)
     }
 
     // MARK: - テキストモードの右クリックメニュー（SPEC §8.1）
@@ -462,46 +488,64 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
     }
 
     private func applyImage(from decision: PasteDecision) -> Bool {
-        let data: Data
-        let fileExtension: String
-
+        let loadData: () throws -> (data: Data, hintedExtension: String)
         switch decision {
         case .image(let pasteboardData, let ext):
-            data = pasteboardData
-            fileExtension = ext
+            loadData = { (pasteboardData, ext) }
         case .imageFile(let url):
             // PLAN §3.7: ファイルのバイト列をそのまま読む（NSImage 経由にすると原本が失われる）
-            guard let fileData = try? Data(contentsOf: url) else {
-                window.shake()
-                return false
-            }
-            data = fileData
-            fileExtension = url.pathExtension.isEmpty
-                ? ImageStore.fileExtension(of: fileData)
-                : url.pathExtension.lowercased()
+            loadData = { (try Data(contentsOf: url, options: .mappedIfSafe), url.pathExtension) }
         default:
             return false
         }
 
-        let reference = ImageReference(id: UUID(), fileExtension: fileExtension)
-        do {
-            try imageStore.save(data, reference: reference)
-        } catch {
-            NSLog("[Ttemp] 画像の保存に失敗した: \(error.localizedDescription)")
-            window.shake()
-            return false
+        let importID = UUID()
+        pendingImageImportID = importID
+        let imageStore = self.imageStore
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let (data, hintedExtension) = try loadData()
+                // 拡張子ではなく実バイトを正とする。偽装／誤った拡張子のファイルでも、
+                // 「元形式」保存と永続化ファイル名を実形式に揃える。
+                let detectedExtension = ImageStore.fileExtension(of: data)
+                let fileExtension = detectedExtension == "dat" ? hintedExtension : detectedExtension
+                let reference = ImageReference(id: UUID(), fileExtension: fileExtension)
+                try imageStore.save(data, reference: reference)
+                DispatchQueue.main.async { [weak self] in
+                    guard let self,
+                          self.pendingImageImportID == importID,
+                          !self.isClosing,
+                          self.mode != .filledText else {
+                        // 後発操作で不要になった原本は state に載らないため即時回収する。
+                        imageStore.remove(reference)
+                        return
+                    }
+                    self.pendingImageImportID = nil
+                    // NSImage は AppKit 境界なのでメインスレッドで作る。拡張子だけ画像でも
+                    // 実際にデコードできない場合は保存した原本を破棄して拒否する。
+                    guard let displayImage = ImageStore.displayImage(at: imageStore.url(for: reference)) else {
+                        imageStore.remove(reference)
+                        self.window.shake()
+                        return
+                    }
+                    self.installImage(reference: reference,
+                                      displayImage: displayImage,
+                                      resizeWindow: true)
+                    self.onStateChanged?()
+                }
+            } catch {
+                NSLog("[Ttemp] 画像の取り込みに失敗した: \(error.localizedDescription)")
+                DispatchQueue.main.async { [weak self] in
+                    guard let self,
+                          self.pendingImageImportID == importID,
+                          !self.isClosing else { return }
+                    self.pendingImageImportID = nil
+                    self.window.shake()
+                }
+            }
         }
 
-        // 拡張子は画像でも実際には読めない場合がある。保存済みファイルからデコードすることで、
-        // 検証とファイルバックの表示画像作成を1回のデコードで済ませる
-        guard let displayImage = ImageStore.displayImage(at: imageStore.url(for: reference)) else {
-            imageStore.remove(reference)
-            window.shake()
-            return false
-        }
-
-        installImage(reference: reference, displayImage: displayImage, resizeWindow: true)
-        onStateChanged?()
+        // ドロップ先には即時に受理を返し、重いファイルI/Oは上で継続する。
         return true
     }
 
@@ -562,6 +606,7 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
 
     /// SPEC §6.1: 「画像を削除」→ 空のテキストモードに戻る。ウィンドウサイズは維持する（SPEC §6.2）。
     func removeImage() {
+        pendingImageImportID = nil
         guard imagePayload != nil else { return }
         imagePayload = nil
         imageView?.image = nil
@@ -584,25 +629,26 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
 
     func copyImageToClipboard() {
         guard let imagePayload else { return }
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
+        var representations: [(Data, NSPasteboard.PasteboardType)] = []
         if let data = imageStore.load(imagePayload.reference),
            let type = UTType(filenameExtension: imagePayload.reference.fileExtension)?.identifier {
-            pasteboard.setData(data, forType: NSPasteboard.PasteboardType(type))
+            representations.append((data, NSPasteboard.PasteboardType(type)))
         }
         // 原本形式を読めない相手のために TIFF も載せる
         if let tiff = imagePayload.displayImage.tiffRepresentation {
-            pasteboard.setData(tiff, forType: .tiff)
+            representations.append((tiff, .tiff))
+        }
+        // 原本が消えて表示画像の変換にも失敗した場合、既存クリップボードを空にしない。
+        guard !representations.isEmpty else { return }
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        for (data, type) in representations {
+            pasteboard.setData(data, forType: type)
         }
     }
 
     func saveImage(format: ImageExportFormat) {
         guard let imagePayload else { return }
-        guard let originalData = imageStore.load(imagePayload.reference),
-              let data = ImageExporter.encode(originalData: originalData, to: format) else {
-            window.shake()
-            return
-        }
 
         let panel = NSSavePanel()
         panel.nameFieldStringValue = ImageExporter.defaultFileName(date: Date(),
@@ -615,13 +661,35 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
             panel.directoryURL = directory
         }
         panel.beginSheetModal(for: window) { [weak self] response in
-            guard response == .OK, let url = panel.url else { return }
-            do {
-                try data.write(to: url, options: .atomic)
-                self?.preferences.lastImageSaveDirectory = url.deletingLastPathComponent()
-            } catch {
-                NSLog("[Ttemp] 画像の書き出しに失敗した: \(error.localizedDescription)")
+            guard response == .OK, let url = panel.url, let self else { return }
+            let reference = imagePayload.reference
+            let imageStore = self.imageStore
+            // 原本の読込・デコード・再エンコード・書込は巨大画像で重くなるため、
+            // 保存先が確定してからバックグラウンドで行う。
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                do {
+                    guard let originalData = imageStore.load(reference),
+                          let data = ImageExporter.encode(originalData: originalData, to: format) else {
+                        throw ImageSaveError.encodingFailed
+                    }
+                    try data.write(to: url, options: .atomic)
+                    DispatchQueue.main.async { [weak self] in
+                        self?.preferences.lastImageSaveDirectory = url.deletingLastPathComponent()
+                    }
+                } catch {
+                    NSLog("[Ttemp] 画像の書き出しに失敗した: \(error.localizedDescription)")
+                    DispatchQueue.main.async { [weak self] in self?.window.shake() }
+                }
             }
+        }
+    }
+
+    private enum ImageSaveError: LocalizedError {
+        case encodingFailed
+
+        var errorDescription: String? {
+            L10n.pick("画像データを指定形式へ変換できませんでした",
+                      "The image could not be converted to the selected format")
         }
     }
 
@@ -679,6 +747,7 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
     func requestClose() {
         guard !isClosing else { return }
         isClosing = true
+        pendingImageImportID = nil
         if !isEmpty {
             copyContentsToClipboard()
         }
@@ -692,6 +761,7 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
     private func discardSilently() {
         guard !isClosing else { return }
         isClosing = true
+        pendingImageImportID = nil
         fadeOutAndClose()
     }
 
@@ -699,6 +769,7 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
     func closeWithoutCopying() {
         guard !isClosing else { return }
         isClosing = true
+        pendingImageImportID = nil
         window.close()
     }
 
@@ -735,6 +806,8 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
         // 「画像を選択…」（＝空のテキストモードでしか出ない）を選んだ瞬間に、
         // シートを付けたままウィンドウが閉じることになる。
         guard window.attachedSheet == nil else { return }
+        // 受理済みの画像ファイルをバックグラウンド保存中は、見かけ上まだ空でも閉じない。
+        guard pendingImageImportID == nil else { return }
         // SPEC §3.2: キーウィンドウでなくなった時点で判定する。空・テキストモードのときだけ破棄する。
         // ピン留め中は原則として残すが、設定が「固定する（空になったら消す）」なら空は消す（SPEC §9）。
         guard !isClosing, isEmpty else { return }
@@ -759,6 +832,8 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
     // MARK: - NSTextViewDelegate
 
     func textDidChange(_ notification: Notification) {
+        // 空ウィンドウへの画像取り込み中にユーザーが入力したら、文字を優先する。
+        pendingImageImportID = nil
         onStateChanged?()
     }
 }

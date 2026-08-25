@@ -23,7 +23,7 @@ enum MainMenuBuilder {
         let editMenuItem = NSMenuItem()
         let editMenu = NSMenu(title: L10n.pick("編集", "Edit"))
         editMenu.addItem(withTitle: L10n.pick("取り消す", "Undo"), action: Selector(("undo:")), keyEquivalent: "z")
-        let redo = editMenu.addItem(withTitle: L10n.pick("やり直す", "Redo"), action: Selector(("redo:")), keyEquivalent: "Z")
+        let redo = editMenu.addItem(withTitle: L10n.pick("やり直す", "Redo"), action: Selector(("redo:")), keyEquivalent: "z")
         redo.keyEquivalentModifierMask = [.command, .shift]
         editMenu.addItem(.separator())
         editMenu.addItem(withTitle: L10n.pick("カット", "Cut"), action: #selector(NSText.cut(_:)), keyEquivalent: "x")

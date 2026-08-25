@@ -1,6 +1,6 @@
 import AppKit
 
-/// 設定画面（SPEC §9）。項目は5つのみ。
+/// 設定画面（SPEC §9）。言語を含む6項目だけに絞る。
 final class SettingsWindowController: NSObject, NSWindowDelegate {
     private let preferences: Preferences
     /// グローバル文字サイズの読み書き（WindowManager 経由で全ウィンドウに反映させる）
@@ -16,6 +16,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
     private var permissionLabel: NSTextField?
     private var permissionButton: NSButton?
     private var permissionTimer: Timer?
+    private var languageObserver: NSObjectProtocol?
 
     init(preferences: Preferences = .shared,
          globalFontSize: (get: () -> CGFloat, set: (CGFloat) -> Void)) {
@@ -25,10 +26,17 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
         // 言語が切り替わったら（この画面の言語ポップアップ経由を含む）表示を作り直す。
         // ポップアップのアクション中に contentView を差し替えないよう1サイクル遅らせる。
-        NotificationCenter.default.addObserver(forName: L10n.didChangeNotification,
-                                               object: nil,
-                                               queue: .main) { [weak self] _ in
+        languageObserver = NotificationCenter.default.addObserver(forName: L10n.didChangeNotification,
+                                                                  object: nil,
+                                                                  queue: .main) { [weak self] _ in
             DispatchQueue.main.async { self?.rebuildForLanguageChange() }
+        }
+    }
+
+    deinit {
+        permissionTimer?.invalidate()
+        if let languageObserver {
+            NotificationCenter.default.removeObserver(languageObserver)
         }
     }
 
@@ -103,6 +111,12 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         // 2. デフォルト文字サイズ（SPEC §9: 9〜48pt）
         let field = NSTextField(string: "")
         field.alignment = .right
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.allowsFloats = false
+        formatter.minimum = NSNumber(value: Double(FontSizeModel.minSize))
+        formatter.maximum = NSNumber(value: Double(FontSizeModel.maxSize))
+        field.formatter = formatter
         field.target = self
         field.action = #selector(fontSizeFieldChanged)
         field.widthAnchor.constraint(equalToConstant: 56).isActive = true
