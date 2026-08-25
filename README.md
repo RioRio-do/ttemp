@@ -42,3 +42,7 @@ mainへのpushで、CIがテスト、署名、DMG/ZIP/appcast生成、GitHub Rel
 
 - [SPEC.md](SPEC.md) — 仕様
 - [docs/SIGNING.md](docs/SIGNING.md) — 署名・更新・リリース
+
+## ライセンス
+
+[MIT-0](LICENSE)

@@ -41,3 +41,7 @@ See [docs/SIGNING.md](docs/SIGNING.md) for keys and verification.
 
 - [SPEC.md](SPEC.md) — Specification
 - [docs/SIGNING.md](docs/SIGNING.md) — Signing, updates, and releases
+
+## License
+
+[MIT-0](LICENSE)
