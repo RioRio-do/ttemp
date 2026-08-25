@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+
+# ビルド生成物
+build/
+dist/
+DerivedData/
+
+# XcodeGen が project.yml から生成する（xcodegen で再生成できる）
+Ttemp.xcodeproj/
+
+# Xcode のユーザーローカル状態
+*.xcuserdatad/
+xcuserdata/
+
+# 署名用の秘密鍵・証明書（scripts/create-signing-cert.sh の出力）
+*.p12
+*.pem
+
+# このリポジトリと無関係な作業ファイル
+tasogare_zankyo.strudel.js
