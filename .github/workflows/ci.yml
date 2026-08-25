@@ -16,19 +16,19 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     name: ビルドとテスト
     runs-on: macos-15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: XcodeGen を入れる
-        run: |
-          # macOS hosted runnerに残る未信頼tap。Homebrewの推奨どおり使わないtapを外す。
-          if brew tap | grep -Fxq 'aws/tap'; then
-            brew untap aws/tap
-          fi
-          brew install xcodegen
+        run: ./scripts/install-xcodegen.sh "$RUNNER_TEMP/ttemp-tools" >> "$GITHUB_PATH"
       - name: アプリをビルド
         run: |
           xcodegen generate
@@ -59,13 +59,10 @@ jobs:
         with:
           # コミット数からバージョンを採番するため全履歴が要る
           fetch-depth: 0
+          persist-credentials: false
 
       - name: XcodeGen を入れる
-        run: |
-          if brew tap | grep -Fxq 'aws/tap'; then
-            brew untap aws/tap
-          fi
-          brew install xcodegen
+        run: ./scripts/install-xcodegen.sh "$RUNNER_TEMP/ttemp-tools" >> "$GITHUB_PATH"
 
       - name: バージョンを決める
         id: version
@@ -140,8 +137,15 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "v${{ steps.version.outputs.version }}" \
-            dist/Ttemp.dmg dist/Ttemp.zip dist/appcast.xml \
+          TAG="v${{ steps.version.outputs.version }}"
+          EXISTING_TARGET=$(git rev-parse -q --verify "refs/tags/$TAG^{commit}" || true)
+          if [ -n "$EXISTING_TARGET" ] && [ "$EXISTING_TARGET" != "$GITHUB_SHA" ]; then
+            echo "$TAG は別commit $EXISTING_TARGET を指しています。" >&2
+            exit 1
+          fi
+          gh release create "$TAG" \
+            dist/Ttemp.dmg dist/Ttemp.zip dist/appcast.xml dist/SHA256SUMS \
+            --target "$GITHUB_SHA" \
             --title "Ttemp ${{ steps.version.outputs.version }}" \
             --generate-notes
 

@@ -13,6 +13,12 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+if ! git diff --quiet || ! git diff --cached --quiet; then
+    echo "tracked fileに未コミット変更があります。release前にcommitしてください。" >&2
+    exit 1
+fi
+SOURCE_REVISION=$(git rev-parse HEAD)
+
 IDENTITY="${TTEMP_SIGN_IDENTITY:-Ttemp Signing}"
 
 if [ -n "${TTEMP_KEYCHAIN:-}" ] && [[ "$IDENTITY" =~ ^[0-9A-Fa-f]{40}$ ]]; then
@@ -46,7 +52,7 @@ codesign --verify --deep --strict --verbose=2 "$APP"
 
 echo "==> dist/ へ配置"
 mkdir -p dist
-rm -rf dist/Ttemp.app dist/Ttemp.dmg dist/Ttemp.zip dist/appcast.xml
+rm -rf dist/Ttemp.app dist/Ttemp.dmg dist/Ttemp.zip dist/appcast.xml dist/SHA256SUMS
 cp -R "$APP" dist/
 ditto -c -k --keepParent dist/Ttemp.app dist/Ttemp.zip
 
@@ -98,7 +104,7 @@ cat > dist/appcast.xml <<EOF
 EOF
 
 xmllint --noout dist/appcast.xml
-echo "==> Sparkle EdDSA 署名の検証"
+echo "==> Sparkle archive EdDSA 署名の検証"
 if [ -n "${TTEMP_ED_KEY_FILE:-}" ]; then
     "$SPARKLE_BIN/sign_update" --verify --ed-key-file "$TTEMP_ED_KEY_FILE" \
         dist/Ttemp.zip "$ED_SIGNATURE"
@@ -106,5 +112,21 @@ else
     "$SPARKLE_BIN/sign_update" --verify dist/Ttemp.zip "$ED_SIGNATURE"
 fi
 
-echo "完了: dist/Ttemp.dmg + dist/Ttemp.zip + dist/appcast.xml (Ttemp $VERSION, build $BUILD, identity: $IDENTITY)"
-echo "手動でリリースする場合: gh release create \"v$VERSION\" dist/Ttemp.dmg dist/Ttemp.zip dist/appcast.xml --title \"Ttemp $VERSION\""
+echo "==> appcast自体をEdDSA署名"
+if [ -n "${TTEMP_ED_KEY_FILE:-}" ]; then
+    "$SPARKLE_BIN/sign_update" --ed-key-file "$TTEMP_ED_KEY_FILE" dist/appcast.xml
+else
+    "$SPARKLE_BIN/sign_update" dist/appcast.xml
+fi
+xmllint --noout dist/appcast.xml
+if [ -n "${TTEMP_ED_KEY_FILE:-}" ]; then
+    "$SPARKLE_BIN/sign_update" --verify --ed-key-file "$TTEMP_ED_KEY_FILE" dist/appcast.xml
+else
+    "$SPARKLE_BIN/sign_update" --verify dist/appcast.xml
+fi
+
+echo "==> 公開assetのSHA-256を記録"
+(cd dist && shasum -a 256 Ttemp.dmg Ttemp.zip appcast.xml > SHA256SUMS)
+
+echo "完了: dist/Ttemp.dmg + dist/Ttemp.zip + dist/appcast.xml + dist/SHA256SUMS (Ttemp $VERSION, build $BUILD, identity: $IDENTITY)"
+echo "手動でリリースする場合: gh release create \"v$VERSION\" dist/Ttemp.dmg dist/Ttemp.zip dist/appcast.xml dist/SHA256SUMS --target \"$SOURCE_REVISION\" --title \"Ttemp $VERSION\""

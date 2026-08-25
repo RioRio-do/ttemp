@@ -7,7 +7,7 @@ GitHub Actions（.github/workflows/ci.yml）が全自動で行う。
 
 | | コード署名証明書「Ttemp Signing」 | Sparkle EdDSA 鍵 |
 |---|---|---|
-| 役割 | .app 本体の署名。macOS の TCC（入力監視の許可）が「同じアプリか」を判定する根拠 | 更新パッケージ（zip）の署名。Sparkle が「本物の更新か」を検証する根拠 |
+| 役割 | .app 本体の署名。macOS の TCC（入力監視の許可）が「同じアプリか」を判定する根拠 | 更新パッケージ（zip）とfeed（appcast）の署名。Sparkle が「本物の更新か」を検証する根拠 |
 | 公開側 | 証明書（.app に埋まる） | 公開鍵（Info.plist の `SUPublicEDKey`） |
 | 秘密側 | 秘密鍵（.p12 に同梱） | 秘密鍵（base64 のシード値） |
 | 失うと | 許可の引き継ぎが切れる（作り直し＝全ユーザーが入力監視を再許可） | **既存ユーザーに更新を配れなくなる**（appcast の署名検証に通らない） |
@@ -51,15 +51,20 @@ main へ push すると:
      更新判定に使う整数）も同じ値で自動的に増える。**手でバージョンを
      上げる作業は存在しない**。メジャー/マイナーを上げたいときだけ
      project.yml の `MARKETING_VERSION` を書き換える
-3. 使い捨てのユーザーキーチェーンへ証明書を取り込み、user/System trust store を
-   変更せず証明書 fingerprint を直接指定して安定署名し、EdDSA 署名つき appcast.xml
-   と初回インストール用DMGを生成。app の code signature、DMGのchecksum・内部構造、
-   ZIP の EdDSA signature、appcast XML と archive length を公開前に再検証
-4. `vX.Y.N` の GitHub Release を作成し、`Ttemp.dmg`、`Ttemp.zip`、`appcast.xml` を添付
+3. XcodeGen 2.46.0 は公式release ZIPを固定SHA-256で検証し、Sparkle 2.9.6 は
+   commit `ac2def288cbff5cfc7df3ffef6abdf45b72bcb0a`へ固定してからbuild
+4. 使い捨てのユーザーキーチェーンへ証明書を取り込み、user/System trust store を
+   変更せず証明書 fingerprint を直接指定して安定署名し、EdDSA 署名つきZIPと
+   appcast.xml、初回インストール用DMGを生成。app の code signature、DMGのchecksum・
+   内部構造、ZIPとappcastのEdDSA signature、archive lengthを公開前に再検証
+5. built commitと同じSHAを`--target`へ明示して`vX.Y.N`のGitHub Releaseを作成し、
+   `Ttemp.dmg`、`Ttemp.zip`、`appcast.xml`、`SHA256SUMS`を添付
 
 `Ttemp.dmg` は人が初回インストールするときの成果物。背景は言語に依存しない
 `Ttemp` と矢印だけにし、左のappから右のApplicationsエイリアスへドラッグする構成にする。
 `Ttemp.zip` は Sparkle の更新enclosure専用で、appcastは引き続きZIPを参照する。
+`SHA256SUMS`はdownload破損やasset取り違えの確認用であり、同じ配布経路に置かれるため
+publisherの独立した本人確認にはならない。
 
 CI では headless のGUI確認を避けるため、一時キーチェーン内の秘密鍵ACLを
 その job の全processへ開く。キーチェーンと復号済みファイルは Release job 専用で、
@@ -69,6 +74,8 @@ CI では headless のGUI確認を避けるため、一時キーチェーン内�
 `https://github.com/RioRio-do/ttemp/releases/latest/download/appcast.xml`
 （常に最新リリースのアセットへリダイレクトされる固定 URL）なので、
 リリースが作られた時点で配信も完了している。
+`SURequireSignedFeed`と`SUVerifyUpdateBeforeExtraction`を有効にし、feedの署名と
+archiveのEdDSA署名を展開前に検証する。
 
 リリースしたくない push は、最後のコミットの**件名先頭**に `[skip release]` と書く。
 本文中の同じ文字列ではスキップしない。
@@ -111,6 +118,8 @@ security add-trusted-cert -p codeSign -k ~/Library/Keychains/login.keychain-db /
 GitHub Releaseの`Ttemp.dmg`を開き、Ttemp.appをApplicationsエイリアスへドラッグする。
 Release版をDMGやDownloadsから直接起動すると、Applicationsへの配置を案内して終了する。
 自己署名アプリを Web 経由で初めて入れるときは Gatekeeper にブロックされるため、
-Applications内のTtempを右クリック→「開く」、または
-`xattr -d com.apple.quarantine /Applications/Ttemp.app`。
+**このリポジトリの公式GitHub Releaseから入手した場合だけ**、Applications内の
+Ttempを右クリック→「開く」。Developer ID署名とApple公証へ移行するまでは、macOSが
+初回配布元をpublisherまで検証できない残存リスクがある。quarantine属性をcommandで
+削除する手順は案内しない。
 Sparkle 経由の更新には quarantine が付かないため、2回目以降は何も出ない。

@@ -71,6 +71,20 @@ final class PasteboardReaderTests: XCTestCase {
         XCTAssertEqual(PasteboardReader.decide(PasteboardSnapshot()), .none)
     }
 
+    func test_上限を超えるテキストは拒否する() {
+        let text = String(repeating: "a", count: PlainTextSanitizer.maximumUTF16Length + 1)
+        XCTAssertEqual(PasteboardReader.decide(PasteboardSnapshot(hasPlainText: true, text: text)),
+                       .rejectUnsupported)
+    }
+
+    func test_上限を超えるpasteboard画像はdecode前に拒否する() {
+        let limits = ImageImportLimits(maximumEncodedByteCount: imageData.count - 1,
+                                       maximumFrameCount: 1,
+                                       maximumTotalPixelCount: 1)
+        let snapshot = PasteboardSnapshot(imageData: imageData, imageFileExtension: "png")
+        XCTAssertEqual(PasteboardReader.decide(snapshot, imageLimits: limits), .rejectUnsupported)
+    }
+
     func test_拡張子の大文字小文字を問わない() {
         XCTAssertTrue(PasteboardReader.isImageFile(fileURL("A.PNG")))
         XCTAssertTrue(PasteboardReader.isImageFile(fileURL("a.webp")))

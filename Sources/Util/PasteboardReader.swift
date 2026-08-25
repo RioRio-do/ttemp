@@ -44,7 +44,8 @@ enum NoteModeState: Equatable {
 
 enum PasteboardReader {
     /// SPEC §5.4: クリップボードに複数形式が含まれる場合の判定順。
-    static func decide(_ snapshot: PasteboardSnapshot) -> PasteDecision {
+    static func decide(_ snapshot: PasteboardSnapshot,
+                       imageLimits: ImageImportLimits = ImageStore.defaultImportLimits) -> PasteDecision {
         // 1. ファイル URL がある場合、pasteboard 上の画像データは見ない。
         //    Finder はファイルコピー時にアイコン画像を載せることがあり、
         //    PDF のコピーがアイコン絵で画像モードになる誤判定を防ぐ。
@@ -59,11 +60,15 @@ enum PasteboardReader {
         // 2. 画像データがあり、かつプレーンテキスト型が存在しない場合のみ画像とみなす。
         //    「画像＋プレーンテキスト」混在は常にテキストを優先する（SPEC §5.4）。
         if let data = snapshot.imageData, !snapshot.hasPlainText {
+            guard data.count <= imageLimits.maximumEncodedByteCount else {
+                return .rejectUnsupported
+            }
             return .image(data: data, fileExtension: snapshot.imageFileExtension ?? "png")
         }
 
         // 3. それ以外はプレーンテキスト。
         if let text = snapshot.text {
+            guard PlainTextSanitizer.isWithinStorageLimit(text) else { return .rejectUnsupported }
             return .text(text)
         }
         return .none
@@ -123,14 +128,18 @@ enum PasteboardReader {
                                              options: [.urlReadingFileURLsOnly: true]) as? [URL] {
             snapshot.fileURLs = urls
         }
+        // Finder の file URL が最優先。下位表現の文字列やアイコン画像を展開しない。
+        guard snapshot.fileURLs.isEmpty else { return snapshot }
 
         let types = pasteboard.types ?? []
         // 「プレーンテキスト型が存在するか」は厳密にプレーンテキスト型だけで見る。
         // ブラウザの「画像をコピー」は画像データ＋HTML なので、HTML をここに数えると
         // 期待どおり画像モードにならなくなる（SPEC §5.4）。
         snapshot.hasPlainText = types.contains(.string)
-        // 属性付きテキストしかない場合も文字列として取り出す（SPEC §5.3）
-        snapshot.text = plainText(from: pasteboard)
+        if snapshot.hasPlainText {
+            snapshot.text = pasteboard.string(forType: .string)
+            return snapshot
+        }
 
         for candidate in imageTypePriority where types.contains(candidate.type) {
             if let data = pasteboard.data(forType: candidate.type) {
@@ -139,6 +148,11 @@ enum PasteboardReader {
                 break
             }
         }
+        // 画像表現が優先されるときは RTF/HTML の文字列化を行わない。
+        guard snapshot.imageData == nil else { return snapshot }
+
+        // 属性付きテキストしかない場合も文字列として取り出す（SPEC §5.3）
+        snapshot.text = plainText(from: pasteboard)
 
         return snapshot
     }

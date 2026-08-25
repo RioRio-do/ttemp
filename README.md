@@ -14,7 +14,7 @@
 [Ttemp.dmgをダウンロード](https://github.com/RioRio-do/ttemp/releases/latest/download/Ttemp.dmg)し、
 TtempをApplicationsへドラッグする。
 
-自己署名のため、macOSに止められた場合はApplications内のTtempを右クリックして「開く」。
+Ttempは自己署名で未公証です。必ず上記の公式GitHub Releaseから入手し、macOSに止められた場合だけApplications内のTtempを右クリックして「開く」。
 
 ## 入力監視
 
@@ -42,6 +42,7 @@ mainへのpushで、CIがテスト、署名、DMG/ZIP/appcast生成、GitHub Rel
 
 - [SPEC.md](SPEC.md) — 仕様
 - [docs/SIGNING.md](docs/SIGNING.md) — 署名・更新・リリース
+- [SECURITY.md](SECURITY.md) — 脆弱性の非公開報告
 
 ## ライセンス
 

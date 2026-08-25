@@ -494,7 +494,7 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
             loadData = { (pasteboardData, ext) }
         case .imageFile(let url):
             // SPEC §6.3: ファイルのバイト列をそのまま読む（NSImage 経由にすると原本が失われる）
-            loadData = { (try Data(contentsOf: url, options: .mappedIfSafe), url.pathExtension) }
+            loadData = { (try ImageStore.loadImportData(from: url), url.pathExtension) }
         default:
             return false
         }
@@ -507,7 +507,7 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
                 let (data, hintedExtension) = try loadData()
                 // 拡張子ではなく実バイトを正とする。偽装／誤った拡張子のファイルでも、
                 // 「元形式」保存と永続化ファイル名を実形式に揃える。
-                let detectedExtension = ImageStore.fileExtension(of: data)
+                let detectedExtension = try ImageStore.validatedFileExtension(of: data)
                 let fileExtension = detectedExtension == "dat" ? hintedExtension : detectedExtension
                 let reference = ImageReference(id: UUID(), fileExtension: fileExtension)
                 try imageStore.save(data, reference: reference)
@@ -830,6 +830,16 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
     }
 
     // MARK: - NSTextViewDelegate
+
+    func textView(_ textView: NSTextView,
+                  shouldChangeTextIn affectedCharRange: NSRange,
+                  replacementString: String?) -> Bool {
+        let accepted = PlainTextSanitizer.canReplace(currentUTF16Length: textView.textStorage?.length ?? 0,
+                                                     range: affectedCharRange,
+                                                     replacement: replacementString)
+        if !accepted { window.shake() }
+        return accepted
+    }
 
     func textDidChange(_ notification: Notification) {
         // 空ウィンドウへの画像取り込み中にユーザーが入力したら、文字を優先する。
