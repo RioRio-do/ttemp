@@ -1,5 +1,5 @@
 #!/bin/bash
-# Release ビルド → 「Ttemp Signing」で安定署名 → dist/Ttemp.zip と dist/appcast.xml を作る。
+# Release ビルド → 「Ttemp Signing」で安定署名 → DMG、ZIP、appcast.xml を作る。
 # ローカルでも CI（.github/workflows/ci.yml）でも同じ手順を通すための共通スクリプト。
 # 通常のリリースは main へ push するだけで CI が全自動で行う（docs/SIGNING.md）。
 #
@@ -46,12 +46,15 @@ codesign --verify --deep --strict --verbose=2 "$APP"
 
 echo "==> dist/ へ配置"
 mkdir -p dist
-rm -rf dist/Ttemp.app dist/Ttemp.zip dist/appcast.xml
+rm -rf dist/Ttemp.app dist/Ttemp.dmg dist/Ttemp.zip dist/appcast.xml
 cp -R "$APP" dist/
 ditto -c -k --keepParent dist/Ttemp.app dist/Ttemp.zip
 
 VERSION=$(defaults read "$PWD/dist/Ttemp.app/Contents/Info" CFBundleShortVersionString)
 BUILD=$(defaults read "$PWD/dist/Ttemp.app/Contents/Info" CFBundleVersion)
+
+echo "==> 初回インストール用DMGを生成"
+./scripts/create-dmg.sh dist/Ttemp.app dist/Ttemp.dmg
 
 echo "==> appcast.xml を生成（EdDSA 署名）"
 SPARKLE_BIN="build/DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin"
@@ -103,5 +106,5 @@ else
     "$SPARKLE_BIN/sign_update" --verify dist/Ttemp.zip "$ED_SIGNATURE"
 fi
 
-echo "完了: dist/Ttemp.zip + dist/appcast.xml (Ttemp $VERSION, build $BUILD, identity: $IDENTITY)"
-echo "手動でリリースする場合: gh release create \"v$VERSION\" dist/Ttemp.zip dist/appcast.xml --title \"Ttemp $VERSION\""
+echo "完了: dist/Ttemp.dmg + dist/Ttemp.zip + dist/appcast.xml (Ttemp $VERSION, build $BUILD, identity: $IDENTITY)"
+echo "手動でリリースする場合: gh release create \"v$VERSION\" dist/Ttemp.dmg dist/Ttemp.zip dist/appcast.xml --title \"Ttemp $VERSION\""

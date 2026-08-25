@@ -53,9 +53,13 @@ main へ push すると:
      project.yml の `MARKETING_VERSION` を書き換える
 3. 使い捨てのユーザーキーチェーンへ証明書を取り込み、user/System trust store を
    変更せず証明書 fingerprint を直接指定して安定署名し、EdDSA 署名つき appcast.xml
-   を生成。app の code signature、ZIP の EdDSA signature、appcast XML と archive
-   length を公開前に再検証
-4. `vX.Y.N` の GitHub Release を作成し、`Ttemp.zip` と `appcast.xml` を添付
+   と初回インストール用DMGを生成。app の code signature、DMGのchecksum・内部構造、
+   ZIP の EdDSA signature、appcast XML と archive length を公開前に再検証
+4. `vX.Y.N` の GitHub Release を作成し、`Ttemp.dmg`、`Ttemp.zip`、`appcast.xml` を添付
+
+`Ttemp.dmg` は人が初回インストールするときの成果物。背景は言語に依存しない
+`Ttemp` と矢印だけにし、左のappから右のApplicationsエイリアスへドラッグする構成にする。
+`Ttemp.zip` は Sparkle の更新enclosure専用で、appcastは引き続きZIPを参照する。
 
 CI では headless のGUI確認を避けるため、一時キーチェーン内の秘密鍵ACLを
 その job の全processへ開く。キーチェーンと復号済みファイルは Release job 専用で、
@@ -104,6 +108,9 @@ security add-trusted-cert -p codeSign -k ~/Library/Keychains/login.keychain-db /
 
 ## 受け取り側の注意（初回のみ）
 
-自己署名アプリを Web 経由で初めて入れるときは Gatekeeper にブロックされる。
-右クリック→「開く」、または `xattr -d com.apple.quarantine Ttemp.app`。
+GitHub Releaseの`Ttemp.dmg`を開き、Ttemp.appをApplicationsエイリアスへドラッグする。
+Release版をDMGやDownloadsから直接起動すると、Applicationsへの配置を案内して終了する。
+自己署名アプリを Web 経由で初めて入れるときは Gatekeeper にブロックされるため、
+Applications内のTtempを右クリック→「開く」、または
+`xattr -d com.apple.quarantine /Applications/Ttemp.app`。
 Sparkle 経由の更新には quarantine が付かないため、2回目以降は何も出ない。

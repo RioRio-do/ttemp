@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var windowManager = WindowManager(preferences: preferences, stateStore: stateStore)
     private let eventTap = EventTapController()
     private let permissionMonitor = PermissionMonitor()
+    private var hasStartedRuntime = false
     private var statusItemController: StatusItemController?
     private lazy var settingsController = SettingsWindowController(
         preferences: preferences,
@@ -24,6 +25,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard !terminateIfAlreadyRunning() else { return }
+#if !DEBUG
+        guard continueOnlyIfInstalledInApplications() else { return }
+#endif
+        hasStartedRuntime = true
 
         // SPEC §1: Dock アイコンなし
         NSApp.setActivationPolicy(.accessory)
@@ -96,6 +101,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // 多重起動側やApplications外の起動では、runtimeを一度も初期化していない。
+        guard hasStartedRuntime else { return }
         permissionMonitor.stop()
         eventTap.stop()
         // SPEC §10.1: Quit 時にも保存する。ウィンドウを閉じる前に行う（閉じてからでは
@@ -108,6 +115,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// メインメニュー（MainMenuBuilder）の「Ttemp について」から呼ばれる
     @objc func showAboutPanel(_ sender: Any?) {
         AboutPanel.show()
+    }
+
+    // MARK: - インストール場所（SPEC §12.4）
+
+    /// Release版をDMGやDownloadsから直接常用させず、/Applicationsへの配置を案内する。
+    private func continueOnlyIfInstalledInApplications() -> Bool {
+        let bundleURL = Bundle.main.bundleURL
+        guard !ApplicationLocation.isInstalled(bundleURL: bundleURL) else { return true }
+
+        NSApp.setActivationPolicy(.accessory)
+        NSApp.activate(ignoringOtherApps: true)
+
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = L10n.pick("TtempをApplicationsに入れてください",
+                                      "Move Ttemp to Applications")
+        alert.informativeText = L10n.pick(
+            "ログイン項目と自動更新を安定して動かすため、TtempはApplicationsフォルダから起動してください。"
+                + "DMGでTtempをApplicationsへドラッグしてから、もう一度起動してください。",
+            "To keep login launch and automatic updates reliable, Ttemp must run from the Applications folder. "
+                + "Drag Ttemp to Applications in the DMG, then open it again."
+        )
+        alert.addButton(withTitle: L10n.pick("Finderで場所を表示", "Show in Finder"))
+        alert.addButton(withTitle: L10n.pick("終了", "Quit"))
+
+        if alert.runModal() == .alertFirstButtonReturn {
+            NSWorkspace.shared.activateFileViewerSelecting([bundleURL])
+        }
+        NSApp.terminate(nil)
+        return false
     }
 
     // MARK: - 入力監視の未許可アラート（SPEC §11.3）

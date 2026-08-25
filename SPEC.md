@@ -393,7 +393,12 @@ Input Monitoring は §2 の listen-only key/mouse event 検出だけに使う�
 
 ### 12.4 Release
 
-- `scripts/build-release.sh` は Release app、ZIP、Sparkle signature、`appcast.xml` を再現可能な手順で生成し、app code signature、ZIP EdDSA signature、appcast XML、archive length を公開前に再検証する。
+- `scripts/build-release.sh` は署名済みRelease appから、初回インストール用`Ttemp.dmg`、Sparkle更新用`Ttemp.zip`、EdDSA signature、`appcast.xml`を再現可能な手順で生成する。
+- DMGは660×400 pointのFinder icon viewとし、背景の文字は`Ttemp`だけ、中央に右向き矢印を置く。左に`Ttemp.app`、右に`/Applications`を指す`Applications` symlinkを置き、言語依存の注釈は表示しない。
+- DMG生成時は一時HFS+ imageのFinder設定を保存してからUDZOへ圧縮する。checksum、`Ttemp.app`、Applications symlink、背景、`.DS_Store`、内部appのcode signatureを公開前に検証し、作業中に作られる`.fseventsd`やSpotlight管理情報を配布物へ含めない。
+- ZIPはSparkle enclosure専用とし、appcastはDMGではなく`Ttemp.zip`を参照する。ZIP EdDSA signature、appcast XML、archive lengthを公開前に再検証する。
+- GitHub Releaseには`Ttemp.dmg`、`Ttemp.zip`、`appcast.xml`を添付し、READMEではDMGを通常ユーザー向けのダウンロードとして案内する。
+- Release buildは、symlink解決・path標準化後のbundle URLが`/Applications`の真の子でなければruntimeを初期化しない。日本語/英語alertでApplicationsへの配置を案内し、要求時は現在のappをFinderで表示して終了する。Debug buildは開発場所から実行できるようこの制約を適用しない。
 - `scripts/setup-release-keys.sh` と `docs/SIGNING.md` を signing/setup の運用手順とする。
 - 既存 PKCS#12 は certificate/private key を保持したまま macOS 15 の Security.framework と互換なコンテナへ再梱包し、certificate SHA-256 fingerprint の一致を置換条件とする。
 - CI の signing certificate は repository secrets から Release job 専用の使い捨て user keychain へ取り込み、user/System trust store は変更しない。PKCS#12 の復号、certificate CN と fingerprint の一致を確認し、fingerprint を Xcode の signing identity として明示する。秘密鍵ACLは当該job内の全processに限って開き、keychainと復号済みファイルは成功・失敗を問わずcleanupする。
@@ -414,6 +419,7 @@ unit test は App host を起動せず、次の純粋ロジックと永続化境
 - image store の原本保持、形式判定、display image。
 - state round-trip、debounce/max-delay、monotonic clock、retry、quarantine、extension normalization/path traversal 防止、managed-file 限定 prune。
 - 日本語/英語選択と pin-mode migration。
+- Applications配下判定のdirect/nested path、DMG path、類似prefix、境界値。
 
 ### 13.2 CI の最低ゲート
 
@@ -422,7 +428,7 @@ CI は少なくとも次を行う。
 1. XcodeGen で project を生成する。
 2. code signing を無効化した Debug app build を明示的に成功させる。
 3. `TtempTests` を実行して全 test を成功させる。
-4. Release workflow では Release build と配布 artifact の存在・署名情報を検証する。
+4. Release workflow では Release build、DMG/ZIP/appcastの存在・構造・署名情報を検証する。
 
 ### 13.3 手動確認
 

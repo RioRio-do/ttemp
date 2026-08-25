@@ -4,7 +4,7 @@
 # - main への push（テスト通過後）: 全自動リリース
 #     バージョン採番（major.minor は project.yml、patch はコミット数）
 #     → 「Ttemp Signing」で安定署名 → EdDSA 署名つき appcast 生成
-#     → GitHub Release 作成（Ttemp.zip + appcast.xml をアセットとして添付）
+#     → GitHub Release 作成（初回用DMG + Sparkle用ZIP/appcast.xmlを添付）
 #   リリースしたくない push はコミット件名の先頭に [skip release] を付ける。
 #
 # 必要なシークレット（scripts/setup-release-keys.sh が登録する）:
@@ -120,7 +120,8 @@ jobs:
           echo "TTEMP_SIGN_IDENTITY=$SIGN_IDENTITY" >> "$GITHUB_ENV"
           echo "==> 署名identity fingerprintを確認"
 
-      - name: リリースビルドと appcast 生成
+      - name: リリースビルドと配布物生成
+        timeout-minutes: 20
         env:
           TTEMP_VERSION: ${{ steps.version.outputs.version }}
           TTEMP_BUILD: ${{ steps.version.outputs.build }}
@@ -140,7 +141,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "v${{ steps.version.outputs.version }}" \
-            dist/Ttemp.zip dist/appcast.xml \
+            dist/Ttemp.dmg dist/Ttemp.zip dist/appcast.xml \
             --title "Ttemp ${{ steps.version.outputs.version }}" \
             --generate-notes
 
