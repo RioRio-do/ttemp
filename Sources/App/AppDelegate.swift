@@ -1,4 +1,5 @@
 import AppKit
+import Sparkle
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     /// SPEC §1: 2つ目のインスタンスは既存インスタンスに「全ウィンドウを前面に」を依頼して終了する
@@ -16,6 +17,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                          set: { [weak self] size in self?.windowManager.globalFontSize = size })
     )
     private lazy var onboardingController = OnboardingWindowController(preferences: preferences)
+    /// 自動更新（docs/SIGNING.md）。生成した時点で定期チェックが動き出す
+    private let updaterController = SPUStandardUpdaterController(startingUpdater: true,
+                                                                 updaterDelegate: nil,
+                                                                 userDriverDelegate: nil)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         guard !terminateIfAlreadyRunning() else { return }
@@ -26,6 +31,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let statusItem = StatusItemController(windowManager: windowManager)
         statusItem.onOpenSettings = { [weak self] in self?.settingsController.show() }
+        statusItem.onCheckForUpdates = { [weak self] in
+            // LSUIElement のアプリは非アクティブのままだと Sparkle のダイアログが背面に出る
+            NSApp.activate(ignoringOtherApps: true)
+            self?.updaterController.checkForUpdates(nil)
+        }
         statusItemController = statusItem
 
         // ⌃; などでグローバル値が変わったら設定画面の表示も追従させる

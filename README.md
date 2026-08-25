@@ -42,4 +42,4 @@ xcodebuild -project Ttemp.xcodeproj -scheme TtempTests -destination 'platform=ma
 ## ドキュメント
 
 - [SPEC.md](SPEC.md) — 仕様（このアプリの唯一の仕様書。コードのコメントは §番号で参照する）
-- [docs/SIGNING.md](docs/SIGNING.md) — 自己署名による安定署名と配布、Sparkle 2 導入の前提
+- [docs/SIGNING.md](docs/SIGNING.md) — 自己署名による安定署名、Sparkle 2 の自動更新とリリース手順

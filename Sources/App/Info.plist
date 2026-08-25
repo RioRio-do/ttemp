@@ -27,5 +27,18 @@
 	<string>NSApplication</string>
 	<key>NSHumanReadableCopyright</key>
 	<string></string>
+	<!-- 自動更新（Sparkle 2, docs/SIGNING.md）。appcast.xml は main ブランチ直下を配信元にする -->
+	<key>SUFeedURL</key>
+	<string>https://raw.githubusercontent.com/RioRio-do/ttemp/main/appcast.xml</string>
+	<!-- generate_keys が作った EdDSA 公開鍵（秘密鍵はログインキーチェーン）。
+	     更新パッケージの検証はこの鍵で行うため Apple Developer アカウントは不要 -->
+	<key>SUPublicEDKey</key>
+	<string>XQCyVcCJKpfIsIS9umCNonEODMKebjLmi+3ZhntQkS4=</string>
+	<!-- 初回起動時の「自動チェックを有効にしますか」ダイアログを出さず、最初から有効にする -->
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<!-- 確認ダイアログなしでダウンロード・インストールまで行う（全自動更新） -->
+	<key>SUAutomaticallyUpdate</key>
+	<true/>
 </dict>
 </plist>

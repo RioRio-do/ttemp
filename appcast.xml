@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+    <channel>
+        <title>Ttemp</title>
+        <item>
+            <title>Ttemp 0.1.0</title>
+            <pubDate>Tue, 25 Aug 2026 10:59:48 +0900</pubDate>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/RioRio-do/ttemp/releases/download/v0.1.0/Ttemp.zip"
+                       sparkle:version="1"
+                       sparkle:shortVersionString="0.1.0"
+                       sparkle:edSignature="oRHOrTRomc3bpuYwhVZb59sqlIL0CE6zZoFAqIATerIAXZGfaC9kBaA5oAO04QRismanG0Z5xbE8lwbU7U9vBA==" length="1118540"
+                       type="application/octet-stream"/>
+        </item>
+    </channel>
+</rss>

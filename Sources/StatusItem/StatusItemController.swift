@@ -8,6 +8,8 @@ final class StatusItemController: NSObject {
 
     /// SPEC §8.3: 「設定…」
     var onOpenSettings: (() -> Void)?
+    /// 「最新版を確認…」。Sparkle の updater（AppDelegate 持ち）に委ねる
+    var onCheckForUpdates: (() -> Void)?
 
     /// SPEC §8.3 の未決事項に対する決定: 一覧のサムネイルは高さ16ptに揃える
     private static let thumbnailHeight: CGFloat = 16
@@ -161,39 +163,7 @@ final class StatusItemController: NSObject {
     }
 
     @objc private func checkForUpdates() {
-        UpdateChecker.check { result in
-            NSApp.activate(ignoringOtherApps: true)
-            let alert = NSAlert()
-            switch result {
-            case .upToDate(let current):
-                alert.messageText = L10n.pick("最新版です", "You're up to date")
-                alert.informativeText = L10n.pick("Ttemp \(current) は最新のバージョンです。",
-                                                  "Ttemp \(current) is the latest version.")
-                alert.runModal()
-
-            case .updateAvailable(let latest, let url):
-                alert.messageText = L10n.pick("新しいバージョンがあります", "Update available")
-                alert.informativeText = L10n.pick(
-                    "Ttemp \(latest) が公開されています（現在: \(AppInfo.version)）。",
-                    "Ttemp \(latest) is available (current: \(AppInfo.version)).")
-                alert.addButton(withTitle: L10n.pick("リリースページを開く", "Open Release Page"))
-                alert.addButton(withTitle: L10n.pick("あとで", "Later"))
-                if alert.runModal() == .alertFirstButtonReturn {
-                    NSWorkspace.shared.open(url)
-                }
-
-            case .failed(let detail):
-                alert.messageText = L10n.pick("更新を確認できませんでした", "Could not check for updates")
-                alert.informativeText = L10n.pick(
-                    "ネットワーク接続を確認するか、リリースページを直接確認してください。（\(detail)）",
-                    "Check your network connection, or visit the release page directly. (\(detail))")
-                alert.addButton(withTitle: L10n.pick("リリースページを開く", "Open Release Page"))
-                alert.addButton(withTitle: L10n.pick("閉じる", "Close"))
-                if alert.runModal() == .alertFirstButtonReturn {
-                    NSWorkspace.shared.open(AppInfo.releasesURL)
-                }
-            }
-        }
+        onCheckForUpdates?()
     }
 
     private static func scaledThumbnail(_ image: NSImage) -> NSImage {

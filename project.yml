@@ -1,5 +1,12 @@
 name: Ttemp
 
+packages:
+  # 自動更新（docs/SIGNING.md）。更新パッケージの検証は Sparkle の EdDSA 鍵で行うため
+  # Apple Developer アカウントは不要（アプリ本体は自己署名のまま）
+  Sparkle:
+    url: https://github.com/sparkle-project/Sparkle
+    from: "2.6.0"
+
 options:
   bundleIdPrefix: com.am921
   deploymentTarget:
@@ -35,6 +42,8 @@ targets:
       - path: Sources
         excludes:
           - "App/Info.plist"
+    dependencies:
+      - package: Sparkle
     settings:
       base:
         PRODUCT_NAME: Ttemp
@@ -69,8 +78,6 @@ targets:
       - path: Sources/Util/FontSizeShortcut.swift
       - path: Sources/Settings/LocalModifier.swift
       - path: Sources/Util/L10n.swift
-      - path: Sources/App/AppInfo.swift
-      - path: Sources/Util/UpdateChecker.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.am921.ttemp.tests

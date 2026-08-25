@@ -40,15 +40,31 @@ Xcode からの開発ビルドも安定署名にしたい場合は、`project.ym
 - 証明書の有効期間は10年。失効させたいときはキーチェーンアクセスで
   `Ttemp Signing` を削除する。
 
-## 将来: 自動更新（Sparkle 2）
+## 自動更新（Sparkle 2）
 
-「最新版を確認…」は今のところ GitHub Releases の最新タグと比較して
-リリースページへ誘導するだけ。全自動更新にするなら Sparkle 2 が候補:
+Sparkle 2 を SPM で組み込み済み。Apple Developer ID は使わず、更新パッケージの
+検証は Sparkle の EdDSA 鍵で行う。
 
-- Sparkle は Apple Developer ID を要求しない。更新パッケージの検証は
-  Sparkle 自身の EdDSA 鍵で行う（`generate_keys` で作る）。
-- appcast.xml をどこかに公開する必要がある（GitHub Releases + raw URL や
-  GitHub Pages で足りる）。
-- アプリ側の署名は本ドキュメントの自己署名のままでよいが、
-  「置き換え後のアプリが同じ証明書で署名されている」ことが
-  TCC 許可の引き継ぎ条件になる点は変わらない。
+構成:
+
+- 秘密鍵: `generate_keys` が作り、ログインキーチェーンに入っている
+  （別マシンでリリースするには鍵のエクスポートが必要。`generate_keys -x` 参照）
+- 公開鍵: `Sources/App/Info.plist` の `SUPublicEDKey`
+- フィード: `SUFeedURL` = `https://raw.githubusercontent.com/RioRio-do/ttemp/main/appcast.xml`
+  （リポジトリ直下の appcast.xml を main に push すると配信される）
+- 挙動: 自動チェック ON（`SUEnableAutomaticChecks`）、確認なしの自動ダウンロード・
+  インストール（`SUAutomaticallyUpdate`）。手動確認はメニューバーの「最新版を確認…」
+
+リリース手順:
+
+1. `project.yml` の `MARKETING_VERSION`（表示用）と `CURRENT_PROJECT_VERSION`
+   （更新判定に使う整数。**リリースごとに必ず上げる**）を上げる
+2. `./scripts/build-release.sh`
+   （ビルド → 安定署名 → `dist/Ttemp.zip` → EdDSA 署名つき appcast.xml 生成）
+3. `appcast.xml` をコミットして push
+4. `gh release create "v<版>" dist/Ttemp.zip`
+
+順序に注意: appcast を push するのはリリース（zip の公開）後でもよいが、
+逆にすると数分間「appcast にはあるのにダウンロードできない」状態になる。
+Sparkle が入れ替えたアプリは quarantine が付かないので、更新に Gatekeeper の
+回避は不要（初回の手動インストールだけ従来どおり）。
