@@ -30,7 +30,7 @@ final class OnboardingWindowController: NSObject {
     }
 
     private func makeWindow() -> NSWindow {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 280),
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 300),
                               // 初回説明を閉じるボタンだけで完了扱いにすると、既定 ON の
                               // ログイン項目も権限要求も適用されない。明示的な「続ける」で完了する。
                               styleMask: [.titled],
@@ -70,7 +70,7 @@ final class OnboardingWindowController: NSObject {
         許可しなくても、メニューバーから使えます。
         """, """
         This shortcut needs macOS Input Monitoring. \
-        Key events received through it are never stored or sent.
+        Ttemp never stores or sends those events.
 
         You can still use Ttemp from the menu bar without it.
         """))

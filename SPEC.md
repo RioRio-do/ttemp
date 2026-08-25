@@ -346,7 +346,7 @@ Input Monitoring は §2 の listen-only key/mouse event 検出だけに使う�
 
 ### 11.2 初回オンボーディング
 
-- `hasCompletedOnboarding == false` のとき、TCC request より先に520×280 ptの non-closable titled windowを中央表示する。
+- `hasCompletedOnboarding == false` のとき、TCC request より先に520×300 ptの non-closable titled windowを中央表示する。
 - title は言語非依存の `Ttemp`。
 - 冒頭に言語選択を置き、OS preferred language が `ja` prefix なら日本語、それ以外は英語を初期値とする。変更は即時反映する。
 - 言語pop-upには表示言語に従う明示的なaccessibility labelを設定する。
@@ -467,7 +467,7 @@ OS/TCC/AppKit UI 依存で unit test 化しにくい項目は release 前に実�
 | menu title / thumbnail | 30文字 / 48×16 pt |
 | state save | debounce 1秒、最大遅延5秒、retry 5秒 |
 | permission poll | 未許可2秒、許可後10秒、設定画面2秒 |
-| Settings / Onboarding / About | 460×300 / 520×280 / 300×210 pt |
+| Settings / Onboarding / About | 460×300 / 520×300 / 300×210 pt |
 
 ### 14.2 非目標
 

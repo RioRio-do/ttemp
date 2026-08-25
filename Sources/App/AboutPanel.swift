@@ -35,7 +35,7 @@ final class AboutPanel: NSObject, NSWindowDelegate {
 
         let icon = NSImageView(image: NSApp.applicationIconImage)
         icon.imageScaling = .scaleProportionallyUpOrDown
-        icon.setAccessibilityElement(false)
+        icon.setAccessibilityLabel("Ttemp")
         icon.widthAnchor.constraint(equalToConstant: 64).isActive = true
         icon.heightAnchor.constraint(equalToConstant: 64).isActive = true
 
