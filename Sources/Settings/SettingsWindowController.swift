@@ -42,7 +42,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
     private func rebuildForLanguageChange() {
         guard let window else { return }
-        window.title = L10n.pick("Ttemp 設定", "Ttemp Settings")
+        window.title = L10n.pick("設定", "Settings")
         window.contentView = makeContentView()
         refresh()
     }
@@ -75,7 +75,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
                               styleMask: [.titled, .closable],
                               backing: .buffered,
                               defer: false)
-        window.title = L10n.pick("Ttemp 設定", "Ttemp Settings")
+        window.title = L10n.pick("設定", "Settings")
         window.isReleasedWhenClosed = false
         window.delegate = self
         window.contentView = makeContentView()
@@ -96,6 +96,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         langPopUp.addItems(withTitles: AppLanguage.allCases.map(\.displayName))
         langPopUp.target = self
         langPopUp.action = #selector(languageChanged)
+        langPopUp.setAccessibilityLabel(L10n.pick("言語", "Language"))
         languagePopUp = langPopUp
         stack.addArrangedSubview(row(label: L10n.pick("言語", "Language"), control: langPopUp))
 
@@ -104,8 +105,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         popUp.addItems(withTitles: LocalModifier.allCases.map(\.displayName))
         popUp.target = self
         popUp.action = #selector(modifierChanged)
+        popUp.setAccessibilityLabel(L10n.pick("個別操作キー", "Per-window key"))
         modifierPopUp = popUp
-        stack.addArrangedSubview(row(label: L10n.pick("ローカル操作の修飾キー", "Per-window modifier key"),
+        stack.addArrangedSubview(row(label: L10n.pick("個別操作キー", "Per-window key"),
                                      control: popUp))
 
         // 2. デフォルト文字サイズ（SPEC §9: 9〜48pt）
@@ -119,6 +121,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         field.formatter = formatter
         field.target = self
         field.action = #selector(fontSizeFieldChanged)
+        field.setAccessibilityLabel(L10n.pick("文字サイズ", "Font size"))
         field.widthAnchor.constraint(equalToConstant: 56).isActive = true
         fontSizeField = field
 
@@ -129,12 +132,13 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         stepper.valueWraps = false
         stepper.target = self
         stepper.action = #selector(fontSizeStepperChanged)
+        stepper.setAccessibilityLabel(L10n.pick("文字サイズ", "Font size"))
         fontSizeStepper = stepper
 
         let sizeStack = NSStackView(views: [field, stepper, NSTextField(labelWithString: "pt")])
         sizeStack.orientation = .horizontal
         sizeStack.spacing = 6
-        stack.addArrangedSubview(row(label: L10n.pick("デフォルト文字サイズ", "Default font size"),
+        stack.addArrangedSubview(row(label: L10n.pick("文字サイズ", "Font size"),
                                      control: sizeStack))
 
         // 3. 新規ウィンドウの最前面固定の既定（SPEC §9）
@@ -142,11 +146,9 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         pinPopUp.addItems(withTitles: NewWindowPinMode.allCases.map(\.displayName))
         pinPopUp.target = self
         pinPopUp.action = #selector(defaultPinModeChanged)
-        pinPopUp.toolTip = L10n.pick(
-            "「空でも残す」を選ぶと、何も書いていないウィンドウもフォーカスを外しただけでは消えなくなります",
-            "With \"keep even when empty\", blank windows survive losing focus")
+        pinPopUp.setAccessibilityLabel(L10n.pick("新規ウィンドウを固定", "Pin new windows"))
         defaultPinPopUp = pinPopUp
-        stack.addArrangedSubview(row(label: L10n.pick("新規ウィンドウの最前面固定", "Pin new windows on top"),
+        stack.addArrangedSubview(row(label: L10n.pick("新規ウィンドウを固定", "Pin new windows"),
                                      control: pinPopUp))
 
         // 4. ログイン時に起動（SPEC §1）
@@ -159,7 +161,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         // 5. 入力監視権限の状態（SPEC §11.3）
         let statusLabel = NSTextField(labelWithString: "")
         permissionLabel = statusLabel
-        let openButton = NSButton(title: L10n.pick("システム設定を開く", "Open System Settings"),
+        let openButton = NSButton(title: L10n.pick("システム設定", "System Settings"),
                                   target: self,
                                   action: #selector(openPermissionSettings))
         permissionButton = openButton
@@ -203,9 +205,13 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
 
     private func updatePermissionStatus() {
         let authorized = PermissionMonitor.isAuthorized
-        permissionLabel?.stringValue = authorized
-            ? L10n.pick("許可済み ✓", "Allowed ✓")
-            : L10n.pick("未許可 ⚠️", "Not allowed ⚠️")
+        let status = authorized
+            ? L10n.pick("許可済み", "Allowed")
+            : L10n.pick("未許可", "Not allowed")
+        permissionLabel?.stringValue = status
+        permissionLabel?.setAccessibilityLabel(
+            L10n.pick("入力監視：\(status)", "Input Monitoring: \(status)")
+        )
         permissionButton?.isHidden = authorized
     }
 

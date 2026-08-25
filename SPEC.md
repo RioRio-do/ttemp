@@ -21,7 +21,7 @@ Ttemp は macOS 14 以降で動く、メニューバー常駐型の一時メモ�
 - `LSUIElement = true` と `.accessory` activation policy を使用し、Dock アイコンを出さない。
 - メニューバー項目はプロセスの生存中、常に利用できる。
 - 最後のウィンドウを閉じても終了しない。
-- `⌘Q` は割り当てない。終了はステータスメニューの `Ttemp を終了 / Quit Ttemp` から行う。
+- `⌘Q` は割り当てない。終了はステータスメニューの `終了 / Quit` から行う。
 - 終了時はウィンドウを閉じる前に状態を同期保存し、内容をクリップボードへコピーしない。
 
 ### 1.2 単一インスタンス
@@ -66,7 +66,7 @@ Ttemp は macOS 14 以降で動く、メニューバー常駐型の一時メモ�
 
 ### 3.1 生成と前面化
 
-- 左右 Shift 成立または `新規ウィンドウ / New Window` で新規ノートを作る。
+- 左右 Shift 成立または `新規メモ / New Note` で新規ノートを作る。
 - 生成時はアプリを明示的に activate し、他アプリより前へ出してキーウィンドウにし、編集ビューを first responder にする。
 - 新規ウィンドウのピン状態は §9 の既定値から決める。復元ウィンドウは保存値を使う。
 - ステータス項目の左クリックと多重起動通知は既存の全ウィンドウを前面へ出し、最後の1枚を key にする。ウィンドウが0枚ならフォーカスを奪わない。
@@ -77,7 +77,7 @@ Ttemp は macOS 14 以降で動く、メニューバー常駐型の一時メモ�
 
 - sheet を表示中。
 - 画像ファイルの読み込み・保存処理を受理済みで完了待ち。
-- ピン留め中で、新規ウィンドウ既定が `固定する（空でも残す） / Pin (keep even when empty)`。
+- ピン留め中で、新規ウィンドウ既定が `空でも固定 / Keep if empty`。
 
 画像モードと実質的に空でないテキストは focus-out で閉じない。自動消滅ではフォーカス復帰処理も行わない。
 
@@ -195,7 +195,7 @@ Ttemp は macOS 14 以降で動く、メニューバー常駐型の一時メモ�
 - 画像の選択 sheet または受理済み background import 中は、見かけ上空でも focus-out 自動消滅させない。
 - `⌘C` と `画像をコピー / Copy Image` は §4 と同じ原本＋TIFF コピーを行う。`⌘A` は何もしない。
 - GIF は通常静止し、pointer hover 中だけ animate する。
-- 保存形式は判別済みなら `元の形式のまま / Original Format`、続いて PNG、JPEG、書き出し可能な runtime だけ HEIC、TIFF。元形式は再エンコードしない。
+- 保存形式は判別済みなら `元の形式 / Original`、続いて PNG、JPEG、書き出し可能な runtime だけ HEIC、TIFF。元形式は再エンコードしない。
 - JPEG/HEIC 品質は0.9。変換は ImageIO source から行い、可能なメタデータと orientation を保つ。
 - 既定ファイル名は `Ttemp yyyy-MM-dd HH.mm.ss.<ext>`。前回保存ディレクトリを初期値にし、成功後だけ更新する。
 - 保存 panel を先に提示し、確定後の原本読み込み・変換・atomic write は background queue で行う。失敗はログと shake で知らせる。
@@ -245,31 +245,34 @@ Ttemp は macOS 14 以降で動く、メニューバー常駐型の一時メモ�
 
 ### 8.3 ステータス項目
 
-- 通常は template SF Symbol `t.square`。入力監視未許可時は `exclamationmark.triangle` とし、日英 tooltip/accessibility label で理由を示す。
+- 通常は template SF Symbol `t.square`。入力監視未許可時は `exclamationmark.triangle` とし、`Ttemp — 入力監視が必要です / Ttemp — Input Monitoring required` を tooltip/accessibility label に使う。
 - 左クリックは §3.1 の全ウィンドウ前面化。右クリックは一時的に menu を設定して表示し、直後に外して左右クリックを分岐可能に保つ。
-- 右メニューの基本順序は New Window、必要時の Allow Input Monitoring、開いているウィンドウ一覧、Bring All Windows to Front、About Ttemp、Check for Updates、Open GitHub Page、Settings、Quit Ttemp。セクション間には separator を置く。
+- 右メニューの基本順序は `新規メモ / New Note`、必要時の `入力監視を許可… / Allow Input Monitoring…`、開いているウィンドウ一覧、`すべてを前面に / Bring All to Front`、`Ttemp について / About Ttemp`、`アップデートを確認… / Check for Updates…`、`GitHub`、`設定… / Settings…`、`終了 / Quit`。セクション間には separator を置く。
 - 一覧のテキストタイトルは改行を空白化・前後trimした先頭30文字で、超過時は `…` を付ける。空テキストは `（空のウィンドウ） / (Empty window)`、画像は `画像 / Image`。画像 thumbnail はアスペクト比を保ち48×16 pt以内へ収める。
-- 一覧が空なら一覧と Bring All を出さない。Input Monitoring 未許可でも New Window は常に出す。
+- 一覧が空なら一覧と Bring All を出さない。Input Monitoring 未許可でも New Note は常に出す。
 
 ### 8.4 メインメニュー
 
 LSUIElement でも responder chain の標準キー操作を成立させるため、非表示の main menu を構築する。
 
-- App: About Ttemp。`⌘Q` は置かない。
+- App: `Ttemp について / About Ttemp`。`⌘Q` は置かない。
 - Edit: `⌘Z` Undo、`⇧⌘Z` Redo、`⌘X/C/V/A`、`⌘F` Find、`⌥⌘F` Find and Replace。
 - Window: `⌘W` Close。
 - 言語変更時に再構築する。
+- About panel は300×210 pt。標準 panel のOS言語混在を避け、言語非依存の `Ttemp`、`<version> (<build>)`、`GitHub` だけを表示する。
 
 ## 9. 設定
 
-設定ウィンドウは460×300 pt、title は `Ttemp 設定 / Ttemp Settings`。初回表示だけ中央へ置き、次回以降はユーザー位置を保つ。次の6項目だけをこの順で持つ。
+設定ウィンドウは460×300 pt、title は `設定 / Settings`。初回表示だけ中央へ置き、次回以降はユーザー位置を保つ。次の6項目だけをこの順で持つ。
 
 1. `言語 / Language`: 日本語、English。変更は開いている設定画面、main menu、以後生成する menu・alert に再起動なしで反映する。
-2. `ローカル操作の修飾キー / Per-window modifier key`: Control または Option。
-3. `デフォルト文字サイズ / Default font size`: 整数の9〜48 pt。field と stepper を同期する。
-4. `新規ウィンドウの最前面固定 / Pin new windows on top`: `固定しない / Don't pin`、`固定する（空になったら消す） / Pin (dismiss when empty)`、`固定する（空でも残す） / Pin (keep even when empty)`。既定は中央の選択肢。
+2. `個別操作キー / Per-window key`: Control または Option。
+3. `文字サイズ / Font size`: 整数の9〜48 pt。field と stepper を同期する。
+4. `新規ウィンドウを固定 / Pin new windows`: `なし / Off`、`空なら閉じる / Close if empty`、`空でも固定 / Keep if empty`。既定は中央の選択肢。
 5. `ログイン時に起動 / Launch at login`: §1.3 の実システム状態を表示・変更する。
-6. `入力監視 / Input Monitoring`: `許可済み ✓ / Allowed ✓` または `未許可 ⚠️ / Not allowed ⚠️`。未許可時だけ System Settings ボタンを出す。表示中は2秒ごと、tolerance 1秒で更新する。
+6. `入力監視 / Input Monitoring`: `許可済み / Allowed` または `未許可 / Not allowed`。未許可時だけ `システム設定 / System Settings` ボタンを出す。表示中は2秒ごと、tolerance 1秒で更新する。
+
+言語、個別操作キー、文字サイズ、固定方法の各controlには、表示言語に従う明示的なaccessibility labelを設定する。入力監視のstatus labelは項目名と状態を合わせて読み上げる。
 
 旧 Bool `pinsNewWindowsByDefault` は true を `pinnedKeepEmpty`、false を `unpinned` として互換読み込みする。
 
@@ -339,18 +342,19 @@ LSUIElement でも responder chain の標準キー操作を成立させるため
 
 ### 11.1 権限の用途
 
-Input Monitoring は §2 の listen-only key/mouse event 検出だけに使う。入力内容を永続化、ログ出力、network 送信しない。許可がなくてもステータスメニューからノートを作成できる。
+Input Monitoring は §2 の listen-only key/mouse event 検出だけに使う。入力監視で受け取ったeventは永続化、ログ出力、network送信しない。ノート本文と画像は§10に従い端末内へ保存するが、network送信しない。許可がなくてもステータスメニューからノートを作成できる。
 
 ### 11.2 初回オンボーディング
 
-- `hasCompletedOnboarding == false` のとき、TCC request より先に520×340 ptの non-closable titled windowを中央表示する。
-- title は `Ttemp へようこそ / Welcome to Ttemp`。
+- `hasCompletedOnboarding == false` のとき、TCC request より先に520×300 ptの non-closable titled windowを中央表示する。
+- title は言語非依存の `Ttemp`。
 - 冒頭に言語選択を置き、OS preferred language が `ja` prefix なら日本語、それ以外は英語を初期値とする。変更は即時反映する。
-- 見出しは `左右の Shift を同時に押すと、どこからでもメモが開きます。 / Press both Shift keys to open a note from anywhere.`。
-- 本文は、ジェスチャー検出に macOS Input Monitoring が必要であること、key press を観測するだけで内容を記録・送信しないこと、未許可でも menu bar の New Window が使えること、後から許可しても再起動不要であることを明記する。
-- `ログイン時に Ttemp を起動する / Launch Ttemp at login` は既定ON。
-- `システム設定を開く / Open System Settings` と `はじめる / Get Started` を置き、Return は Get Started とする。
-- Get Started で初めて login-at-launch の選択、完了 flag、Input Monitoring request を適用する。閉じるだけで完了扱いにしてはならない。
+- 言語pop-upには表示言語に従う明示的なaccessibility labelを設定する。
+- 見出しは `左右 Shift で、どこからでもメモ。 / Press both Shift keys for a note anywhere.`。
+- 本文は、ショートカットに macOS Input Monitoring が必要であること、入力監視で得たkey eventを保存・送信しないこと、未許可でもmenu barから使えることだけを簡潔に示す。
+- `ログイン時に起動 / Launch at login` は既定ON。
+- `続ける / Continue` だけを置き、Returnを割り当てる。
+- Continue で初めて login-at-launch の選択、完了 flag、Input Monitoring request を適用する。閉じるだけで完了扱いにしてはならない。
 
 ### 11.3 権限状態の追従と導線
 
@@ -359,7 +363,7 @@ Input Monitoring は §2 の listen-only key/mouse event 検出だけに使う�
 - 未許可中は2秒、許可後は10秒間隔で状態を監視し、timer tolerance は interval の半分とする。
 - 許可された瞬間に event tap を開始し、再起動を要求しない。剥奪されたら停止する。
 - 未許可時は status symbol、tooltip、accessibility label、右メニューの `入力監視を許可… / Allow Input Monitoring…` で示す。
-- 完了済み・未許可の起動では1起動につき1回、`入力監視が許可されていません / Input Monitoring is not allowed` alert を出す。System Settings、Later、`今後表示しない / Don't show again` を提供する。
+- 完了済み・未許可の起動では1起動につき1回、`入力監視が必要です / Input Monitoring Required` alertを出し、左右Shiftを使うにはSystem Settingsで許可する旨だけを説明する。`システム設定 / System Settings`、`あとで / Later`、`今後表示しない / Don't show again`を提供する。
 - system settings URL は `x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent`。
 
 ## 12. 言語、ビルド、更新、配布
@@ -370,12 +374,14 @@ Input Monitoring は §2 の listen-only key/mouse event 検出だけに使う�
 - 未設定時は OS preferred language の先頭が `ja` prefix なら日本語、その他は英語。
 - 選択は `appLanguage` へ保存し、通知 `com.am921.ttemp.languageDidChange` で開いている UI を更新する。
 - メニュー、設定、onboarding、alert、tooltips、accessibility labels、画像保存の説明は選択言語に従う。固有名、format 名、shortcut 表記はそのままでよい。
+- Ttempが所有するUIは上記の選択言語に従う。TCC、Open/Save panel、SparkleなどmacOSまたはframework所有のUIはOS言語に従う。
+- About panelは言語非依存の最小構成とし、アプリ内言語とOS言語の混在を見せない。
 
 ### 12.2 ビルド構成
 
 - Swift 5、AppKit、macOS deployment target 14.0。
 - project generator は XcodeGen、定義は `project.yml`。生成物 `Ttemp.xcodeproj` は source of truth ではない。
-- Product name `Ttemp`、Bundle ID `com.am921.ttemp`、marketing version `0.1.0`、build version `1`。
+- Product name `Ttemp`、Bundle ID `com.am921.ttemp`、marketing version `0.1.0`、build version `1`。development languageは`en`、`CFBundleLocalizations`は`en`と`ja`。
 - App Sandbox は無効。Hardened Runtime は有効。現行配布は ad-hoc/self signing を前提とする。
 - Release は `-Osize`、LTO、dead-code stripping、post-processing、reflection metadata `none`。
 - AppIcon は asset catalog の10 renditionを全て持ち、16〜1024 pixelの必要 slotを欠かさない。
@@ -398,7 +404,8 @@ Input Monitoring は §2 の listen-only key/mouse event 検出だけに使う�
 - DMG生成時は一時HFS+ imageのFinder設定を保存してからUDZOへ圧縮する。checksum、`Ttemp.app`、Applications symlink、背景、`.DS_Store`、内部appのcode signatureを公開前に検証し、作業中に作られる`.fseventsd`やSpotlight管理情報を配布物へ含めない。
 - ZIPはSparkle enclosure専用とし、appcastはDMGではなく`Ttemp.zip`を参照する。ZIP EdDSA signature、appcast XML、archive lengthを公開前に再検証する。
 - GitHub Releaseには`Ttemp.dmg`、`Ttemp.zip`、`appcast.xml`を添付し、READMEではDMGを通常ユーザー向けのダウンロードとして案内する。
-- Release buildは、symlink解決・path標準化後のbundle URLが`/Applications`の真の子でなければruntimeを初期化しない。日本語/英語alertでApplicationsへの配置を案内し、要求時は現在のappをFinderで表示して終了する。Debug buildは開発場所から実行できるようこの制約を適用しない。
+- 公開READMEは日本語の`README.md`と英語の`README.en.md`を分け、同じ行へ日英を重ねない。
+- Release buildは、symlink解決・path標準化後のbundle URLが`/Applications`の真の子でなければruntimeを初期化しない。alertはtitleを`Ttemp を Applications へ / Move Ttemp to Applications`、本文を移動後に再度開く旨の1文、buttonを`Finder で表示 / Show in Finder`と`終了 / Quit`だけにする。要求時は現在のappをFinderで表示して終了する。Debug buildは開発場所から実行できるようこの制約を適用しない。
 - `scripts/setup-release-keys.sh` と `docs/SIGNING.md` を signing/setup の運用手順とする。
 - 既存 PKCS#12 は certificate/private key を保持したまま macOS 15 の Security.framework と互換なコンテナへ再梱包し、certificate SHA-256 fingerprint の一致を置換条件とする。
 - CI の signing certificate は repository secrets から Release job 専用の使い捨て user keychain へ取り込み、user/System trust store は変更しない。PKCS#12 の復号、certificate CN と fingerprint の一致を確認し、fingerprint を Xcode の signing identity として明示する。秘密鍵ACLは当該job内の全processに限って開き、keychainと復号済みファイルは成功・失敗を問わずcleanupする。
@@ -460,7 +467,7 @@ OS/TCC/AppKit UI 依存で unit test 化しにくい項目は release 前に実�
 | menu title / thumbnail | 30文字 / 48×16 pt |
 | state save | debounce 1秒、最大遅延5秒、retry 5秒 |
 | permission poll | 未許可2秒、許可後10秒、設定画面2秒 |
-| Settings / Onboarding | 460×300 / 520×340 pt |
+| Settings / Onboarding / About | 460×300 / 520×300 / 300×210 pt |
 
 ### 14.2 非目標
 

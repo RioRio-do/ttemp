@@ -8,7 +8,7 @@ final class StatusItemController: NSObject {
 
     /// SPEC §8.3: 「設定…」
     var onOpenSettings: (() -> Void)?
-    /// 「最新版を確認…」。Sparkle の updater（AppDelegate 持ち）に委ねる
+    /// 「アップデートを確認…」。Sparkle の updater（AppDelegate 持ち）に委ねる
     var onCheckForUpdates: (() -> Void)?
 
     /// 一覧のサムネイルを収める上限。極端な横長画像でもメニュー幅を押し広げない。
@@ -56,8 +56,8 @@ final class StatusItemController: NSObject {
         image?.isTemplate = true
         button.image = image
         let description = showsPermissionWarning
-            ? L10n.pick("Ttemp — 入力監視が未許可のため左右 Shift が反応しません",
-                        "Ttemp — Left+Right Shift is disabled: Input Monitoring not allowed")
+            ? L10n.pick("Ttemp — 入力監視が必要です",
+                        "Ttemp — Input Monitoring required")
             : "Ttemp"
         button.toolTip = description
         button.setAccessibilityLabel(description)
@@ -76,7 +76,7 @@ final class StatusItemController: NSObject {
         let menu = NSMenu()
 
         // SPEC §8.3: 入力監視が未付与でもアプリを使えるようにするため必ず置く
-        menu.addItem(withTitle: L10n.pick("新規ウィンドウ", "New Window"),
+        menu.addItem(withTitle: L10n.pick("新規メモ", "New Note"),
                      action: #selector(newWindow), keyEquivalent: "")
             .target = self
 
@@ -102,7 +102,7 @@ final class StatusItemController: NSObject {
                 }
             }
             menu.addItem(.separator())
-            let allItem = menu.addItem(withTitle: L10n.pick("すべてのウィンドウを前面に", "Bring All Windows to Front"),
+            let allItem = menu.addItem(withTitle: L10n.pick("すべてを前面に", "Bring All to Front"),
                                        action: #selector(bringAllToFront),
                                        keyEquivalent: "")
             allItem.target = self
@@ -112,10 +112,10 @@ final class StatusItemController: NSObject {
         menu.addItem(withTitle: L10n.pick("Ttemp について", "About Ttemp"),
                      action: #selector(showAbout), keyEquivalent: "")
             .target = self
-        menu.addItem(withTitle: L10n.pick("最新版を確認…", "Check for Updates…"),
+        menu.addItem(withTitle: L10n.pick("アップデートを確認…", "Check for Updates…"),
                      action: #selector(checkForUpdates), keyEquivalent: "")
             .target = self
-        menu.addItem(withTitle: L10n.pick("GitHub ページを開く", "Open GitHub Page"),
+        menu.addItem(withTitle: "GitHub",
                      action: #selector(openGitHub), keyEquivalent: "")
             .target = self
 
@@ -123,7 +123,7 @@ final class StatusItemController: NSObject {
         menu.addItem(withTitle: L10n.pick("設定…", "Settings…"),
                      action: #selector(openSettings), keyEquivalent: "")
             .target = self
-        menu.addItem(withTitle: L10n.pick("Ttemp を終了", "Quit Ttemp"),
+        menu.addItem(withTitle: L10n.pick("終了", "Quit"),
                      action: #selector(quit), keyEquivalent: "")
             .target = self
 
