@@ -393,8 +393,11 @@ Input Monitoring は §2 の listen-only key/mouse event 検出だけに使う�
 
 ### 12.4 Release
 
-- `scripts/build-release.sh` は Release app、ZIP、Sparkle signature、`appcast.xml` を再現可能な手順で生成する。
+- `scripts/build-release.sh` は Release app、ZIP、Sparkle signature、`appcast.xml` を再現可能な手順で生成し、app code signature、ZIP EdDSA signature、appcast XML、archive length を公開前に再検証する。
 - `scripts/setup-release-keys.sh` と `docs/SIGNING.md` を signing/setup の運用手順とする。
+- 既存 PKCS#12 は certificate/private key を保持したまま macOS 15 の Security.framework と互換なコンテナへ再梱包し、certificate SHA-256 fingerprint の一致を置換条件とする。
+- CI の signing certificate は repository secrets から使い捨て user keychain へ取り込み、System keychain は変更しない。PKCS#12 の復号と code-signing identity の有効性を Release build 前に検証する。
+- Release の明示的な抑止は、main へ push された最後の commit の件名が `[skip release]` で始まる場合に限る。
 - GitHub Actions は main 更新を起点に build/test/release を行う場合でも、秘密鍵を repository へ書き出さず、公開 asset の signature を検証可能に保つ。
 
 ## 13. テストと継続的検証

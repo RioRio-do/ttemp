@@ -22,16 +22,22 @@ GitHub Actions（.github/workflows/ci.yml）が全自動で行う。
 - 登録後は読み出せない（write-only。ログにもマスクされる）
 - コラボレータの push でも動くが、シークレットの値自体は見えない
 
-## セットアップ（一度だけ）
+## セットアップ（初回・鍵形式の移行時）
 
 ```bash
 ./scripts/setup-release-keys.sh
 ```
 
-これが証明書の作成（キーチェーンへの取り込み・信頼設定込み）、Sparkle 鍵の
+これが証明書の用意（キーチェーンへの取り込み・信頼設定込み）、Sparkle 鍵の
 エクスポート、シークレット3つ（`SIGNING_CERT_P12` / `SIGNING_CERT_PASSWORD` /
-`SPARKLE_ED_PRIVATE_KEY`）の登録まで行う。手元の `signing/`（git 管理外）に
-同じものが残るので、**パスワードマネージャ等へ必ずバックアップする**。
+`SPARKLE_ED_PRIVATE_KEY`）の登録まで行う。既存の `.p12` があれば、証明書と秘密鍵を
+維持したまま macOS 15 の Security.framework でも読み込める PKCS#12 コンテナへ
+再梱包し、証明書の SHA-256 fingerprint が変わっていないことを検証してから置換する。
+この移行で TCC が認識する署名 identity は変わらない。
+初回セットアップ後は通常再実行不要だが、旧形式の `.p12` を移行するときは再実行する。
+
+手元の `signing/`（git 管理外）に同じものが残るので、
+**パスワードマネージャ等へ必ずバックアップする**。
 シークレットは読み返せないため、`signing/` を消すとバックアップが唯一の複製になる。
 
 ## リリースの流れ（全自動）
@@ -45,7 +51,9 @@ main へ push すると:
      更新判定に使う整数）も同じ値で自動的に増える。**手でバージョンを
      上げる作業は存在しない**。メジャー/マイナーを上げたいときだけ
      project.yml の `MARKETING_VERSION` を書き換える
-3. シークレットの証明書で安定署名し、EdDSA 署名つき appcast.xml を生成
+3. 使い捨てのユーザーキーチェーンへ証明書を取り込み、System keychain を変更せずに
+   安定署名し、EdDSA 署名つき appcast.xml を生成。app の code signature、ZIP の
+   EdDSA signature、appcast XML と archive length を公開前に再検証
 4. `vX.Y.N` の GitHub Release を作成し、`Ttemp.zip` と `appcast.xml` を添付
 
 アプリ側の `SUFeedURL` は
@@ -53,7 +61,8 @@ main へ push すると:
 （常に最新リリースのアセットへリダイレクトされる固定 URL）なので、
 リリースが作られた時点で配信も完了している。
 
-リリースしたくない push は、コミットメッセージに `[skip release]` と書く。
+リリースしたくない push は、最後のコミットの**件名先頭**に `[skip release]` と書く。
+本文中の同じ文字列ではスキップしない。
 main の履歴を force push で書き換えるとコミット数が巻き戻り採番が壊れるので
 しないこと。
 

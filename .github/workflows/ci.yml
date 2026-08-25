@@ -5,7 +5,7 @@
 #     バージョン採番（major.minor は project.yml、patch はコミット数）
 #     → 「Ttemp Signing」で安定署名 → EdDSA 署名つき appcast 生成
 #     → GitHub Release 作成（Ttemp.zip + appcast.xml をアセットとして添付）
-#   リリースしたくない push はコミットメッセージに [skip release] を入れる。
+#   リリースしたくない push はコミット件名の先頭に [skip release] を付ける。
 #
 # 必要なシークレット（scripts/setup-release-keys.sh が登録する）:
 #   SIGNING_CERT_P12 / SIGNING_CERT_PASSWORD / SPARKLE_ED_PRIVATE_KEY
@@ -42,7 +42,7 @@ jobs:
     if: >-
       github.event_name == 'push' &&
       github.ref == 'refs/heads/main' &&
-      !contains(github.event.head_commit.message, '[skip release]')
+      !startsWith(github.event.head_commit.message, '[skip release]')
     runs-on: macos-15
     permissions:
       contents: write
@@ -72,13 +72,21 @@ jobs:
           SIGNING_CERT_P12: ${{ secrets.SIGNING_CERT_P12 }}
           SIGNING_CERT_PASSWORD: ${{ secrets.SIGNING_CERT_PASSWORD }}
         run: |
-          if [ -z "$SIGNING_CERT_P12" ]; then
-            echo "SIGNING_CERT_P12 が未設定。scripts/setup-release-keys.sh を実行すること" >&2
+          if [ -z "$SIGNING_CERT_P12" ] || [ -z "$SIGNING_CERT_PASSWORD" ]; then
+            echo "署名シークレットが未設定。scripts/setup-release-keys.sh を実行すること" >&2
             exit 1
           fi
           KEYCHAIN="$RUNNER_TEMP/release.keychain-db"
           KEYCHAIN_PASSWORD=$(uuidgen)
-          echo "$SIGNING_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          echo "TTEMP_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+          umask 077
+          printf '%s' "$SIGNING_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+
+          # importの前にbase64破損とpassword不一致を切り分ける。macOS 15の
+          # Security.frameworkと互換な形式への再梱包はsetup scriptが担う。
+          openssl pkcs12 -in "$RUNNER_TEMP/cert.p12" \
+            -passin env:SIGNING_CERT_PASSWORD -noout
+
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
           security set-keychain-settings -lut 3600 "$KEYCHAIN"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
@@ -86,13 +94,13 @@ jobs:
             -P "$SIGNING_CERT_PASSWORD" -T /usr/bin/codesign
           security set-key-partition-list -S "apple-tool:,apple:,codesign:" \
             -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
-          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
-          # 自己署名証明書なので、明示的に信頼させないと codesign の検証が通らない
-          openssl pkcs12 -in "$RUNNER_TEMP/cert.p12" -passin "pass:$SIGNING_CERT_PASSWORD" \
+          security list-keychains -d user -s "$KEYCHAIN" "$HOME/Library/Keychains/login.keychain-db"
+
+          # runnerのSystem keychainは変更せず、使い捨てkeychain内だけでcodesignを信頼する。
+          openssl pkcs12 -in "$RUNNER_TEMP/cert.p12" -passin env:SIGNING_CERT_PASSWORD \
             -clcerts -nokeys -out "$RUNNER_TEMP/cert.pem"
-          sudo security add-trusted-cert -d -r trustRoot \
-            -k /Library/Keychains/System.keychain "$RUNNER_TEMP/cert.pem"
-          echo "TTEMP_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+          security add-trusted-cert -p codeSign -k "$KEYCHAIN" "$RUNNER_TEMP/cert.pem"
+          security find-identity -v -p codesigning "$KEYCHAIN" | grep -Fq '"Ttemp Signing"'
 
       - name: リリースビルドと appcast 生成
         env:
@@ -100,6 +108,10 @@ jobs:
           TTEMP_BUILD: ${{ steps.version.outputs.build }}
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
         run: |
+          if [ -z "$SPARKLE_ED_PRIVATE_KEY" ]; then
+            echo "SPARKLE_ED_PRIVATE_KEY が未設定。scripts/setup-release-keys.sh を実行すること" >&2
+            exit 1
+          fi
           umask 077
           printf '%s' "$SPARKLE_ED_PRIVATE_KEY" > "$RUNNER_TEMP/ed_key"
           TTEMP_ED_KEY_FILE="$RUNNER_TEMP/ed_key" ./scripts/build-release.sh
@@ -113,3 +125,11 @@ jobs:
             dist/Ttemp.zip dist/appcast.xml \
             --title "Ttemp ${{ steps.version.outputs.version }}" \
             --generate-notes
+
+      - name: 署名用一時ファイルを片付ける
+        if: always()
+        run: |
+          if [ -n "${TTEMP_KEYCHAIN:-}" ]; then
+            security delete-keychain "$TTEMP_KEYCHAIN" 2>/dev/null || true
+          fi
+          rm -f "$RUNNER_TEMP/cert.p12" "$RUNNER_TEMP/cert.pem" "$RUNNER_TEMP/ed_key"
