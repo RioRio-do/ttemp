@@ -63,6 +63,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // SPEC §11.3: 初回起動時は、TCC のダイアログを出す前に理由を説明する
         if preferences.hasCompletedOnboarding {
             permissionMonitor.start(requestIfNeeded: true)
+            // メニューバーの「!」アイコンだけでは気づきにくいので、明示的に知らせる。
+            // TCC のダイアログは一度拒否すると二度と出ないため、その後の起動では
+            // このアラートが唯一の導線になる。
+            showPermissionAlertIfNeeded()
         } else {
             permissionMonitor.start(requestIfNeeded: false)
             onboardingController.show { [weak self] in
@@ -79,6 +83,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         stateStore.flush()
         // SPEC §4: Quit は「閉じる」ではないのでクリップボードにコピーしない
         windowManager.closeAllWithoutCopying()
+    }
+
+    /// メインメニュー（MainMenuBuilder）の「Ttemp について」から呼ばれる
+    @objc func showAboutPanel(_ sender: Any?) {
+        AboutPanel.show()
+    }
+
+    // MARK: - 入力監視の未許可アラート（SPEC §11.3）
+
+    /// 未許可のまま起動したら、1起動につき1回だけアラートで知らせる。
+    /// 「今後表示しない」でオプトアウトできる（メニューバーの警告アイコンは残る）。
+    private func showPermissionAlertIfNeeded() {
+        guard !PermissionMonitor.isAuthorized, !preferences.suppressPermissionAlert else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !PermissionMonitor.isAuthorized else { return }
+            NSApp.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            alert.messageText = "入力監視が許可されていません"
+            alert.informativeText = "左右の Shift キー同時押しでメモを開くには、"
+                + "システム設定の「プライバシーとセキュリティ → 入力監視」で Ttemp を許可してください。"
+                + "許可しなくても、メニューバーのアイコンから「新規ウィンドウ」で使えます。"
+            alert.addButton(withTitle: "システム設定を開く")
+            alert.addButton(withTitle: "あとで")
+            alert.showsSuppressionButton = true
+            alert.suppressionButton?.title = "今後表示しない"
+            let response = alert.runModal()
+            if alert.suppressionButton?.state == .on {
+                self.preferences.suppressPermissionAlert = true
+            }
+            if response == .alertFirstButtonReturn {
+                PermissionMonitor.openSystemSettings()
+            }
+        }
     }
 
     // MARK: - 復元

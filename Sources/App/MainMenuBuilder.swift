@@ -12,7 +12,10 @@ enum MainMenuBuilder {
         // アプリメニュー（SPEC §1: ⌘Q は割り当てない）
         let appMenuItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "Ttemp について", action: nil, keyEquivalent: "")
+        let about = appMenu.addItem(withTitle: "Ttemp について",
+                                    action: #selector(AppDelegate.showAboutPanel(_:)),
+                                    keyEquivalent: "")
+        about.target = NSApp.delegate
         appMenuItem.submenu = appMenu
         mainMenu.addItem(appMenuItem)
 

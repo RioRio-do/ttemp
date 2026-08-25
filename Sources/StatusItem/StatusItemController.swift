@@ -89,6 +89,14 @@ final class StatusItemController: NSObject {
         }
 
         menu.addItem(.separator())
+        menu.addItem(withTitle: "Ttemp について", action: #selector(showAbout), keyEquivalent: "")
+            .target = self
+        menu.addItem(withTitle: "最新版を確認…", action: #selector(checkForUpdates), keyEquivalent: "")
+            .target = self
+        menu.addItem(withTitle: "GitHub ページを開く", action: #selector(openGitHub), keyEquivalent: "")
+            .target = self
+
+        menu.addItem(.separator())
         menu.addItem(withTitle: "設定…", action: #selector(openSettings), keyEquivalent: "")
             .target = self
         menu.addItem(withTitle: "Ttemp を終了", action: #selector(quit), keyEquivalent: "")
@@ -119,6 +127,47 @@ final class StatusItemController: NSObject {
 
     @objc private func openSettings() {
         onOpenSettings?()
+    }
+
+    // MARK: - About / 更新確認
+
+    @objc private func showAbout() {
+        AboutPanel.show()
+    }
+
+    @objc private func openGitHub() {
+        NSWorkspace.shared.open(AppInfo.repositoryURL)
+    }
+
+    @objc private func checkForUpdates() {
+        UpdateChecker.check { result in
+            NSApp.activate(ignoringOtherApps: true)
+            let alert = NSAlert()
+            switch result {
+            case .upToDate(let current):
+                alert.messageText = "最新版です"
+                alert.informativeText = "Ttemp \(current) は最新のバージョンです。"
+                alert.runModal()
+
+            case .updateAvailable(let latest, let url):
+                alert.messageText = "新しいバージョンがあります"
+                alert.informativeText = "Ttemp \(latest) が公開されています（現在: \(AppInfo.version)）。"
+                alert.addButton(withTitle: "リリースページを開く")
+                alert.addButton(withTitle: "あとで")
+                if alert.runModal() == .alertFirstButtonReturn {
+                    NSWorkspace.shared.open(url)
+                }
+
+            case .failed(let detail):
+                alert.messageText = "更新を確認できませんでした"
+                alert.informativeText = "ネットワーク接続を確認するか、リリースページを直接確認してください。（\(detail)）"
+                alert.addButton(withTitle: "リリースページを開く")
+                alert.addButton(withTitle: "閉じる")
+                if alert.runModal() == .alertFirstButtonReturn {
+                    NSWorkspace.shared.open(AppInfo.releasesURL)
+                }
+            }
+        }
     }
 
     private static func scaledThumbnail(_ image: NSImage) -> NSImage {

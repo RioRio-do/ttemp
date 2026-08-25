@@ -171,6 +171,8 @@ final class NoteTextView: NSTextView {
         }
         didChangeText()
         setSelectedRange(NSRange(location: range.location + insertedLength, length: 0))
+        // 長文を貼ると挿入末尾（＝キャレット）が可視範囲の外に出たままになるので追従させる
+        scrollRangeToVisible(selectedRange())
     }
 
     // MARK: - 右クリックメニュー

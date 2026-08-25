@@ -13,6 +13,7 @@ final class Preferences {
         static let legacyGlobalModifier = "globalModifier"
         static let lastImageSaveDirectory = "lastImageSaveDirectory"
         static let hasCompletedOnboarding = "hasCompletedOnboarding"
+        static let suppressPermissionAlert = "suppressPermissionAlert"
         static let newWindowPinMode = "newWindowPinMode"
         /// 旧: Bool の「新規ウィンドウを最前面に固定する」。3択へ移行する際の読み替え用
         static let legacyPinsNewWindowsByDefault = "pinsNewWindowsByDefault"
@@ -81,6 +82,12 @@ final class Preferences {
     var hasCompletedOnboarding: Bool {
         get { defaults.bool(forKey: Key.hasCompletedOnboarding) }
         set { defaults.set(newValue, forKey: Key.hasCompletedOnboarding) }
+    }
+
+    /// SPEC §11.3: 起動時の「入力監視が未許可」アラートを今後表示しない
+    var suppressPermissionAlert: Bool {
+        get { defaults.bool(forKey: Key.suppressPermissionAlert) }
+        set { defaults.set(newValue, forKey: Key.suppressPermissionAlert) }
     }
 
     // MARK: - ログイン時に起動（SPEC §1 / §9）

@@ -68,6 +68,8 @@ targets:
       - path: Sources/Util/ImageExporter.swift
       - path: Sources/Util/FontSizeShortcut.swift
       - path: Sources/Settings/LocalModifier.swift
+      - path: Sources/App/AppInfo.swift
+      - path: Sources/Util/UpdateChecker.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.am921.ttemp.tests
