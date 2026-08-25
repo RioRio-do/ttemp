@@ -124,6 +124,58 @@ final class StateStoreTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: backupURL), future)
     }
 
+    func test_上限を超える本文は退避される() throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let text = String(repeating: "a", count: PlainTextSanitizer.maximumUTF16Length + 1)
+        let data = try JSONEncoder().encode(AppState(notes: [makeNote(text: text)]))
+        try data.write(to: store.stateFileURL)
+
+        guard case .recovered(let backupURL) = store.load() else {
+            return XCTFail("recovered が返るべき")
+        }
+        XCTAssertTrue(backupURL.lastPathComponent.hasPrefix("state.json.invalid-"))
+    }
+
+    func test_ノート数上限を超える状態は読み込みも保存も拒否する() throws {
+        let state = AppState(notes: (0...StateStore.maximumNoteCount).map {
+            makeNote(text: "note-\($0)")
+        })
+        XCTAssertThrowsError(try store.save(state))
+
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try JSONEncoder().encode(state).write(to: store.stateFileURL)
+        guard case .recovered(let backupURL) = store.load() else {
+            return XCTFail("recovered が返るべき")
+        }
+        XCTAssertTrue(backupURL.lastPathComponent.hasPrefix("state.json.invalid-"))
+    }
+
+    func test_重複したノートIDは退避される() throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let note = makeNote()
+        try JSONEncoder().encode(AppState(notes: [note, note])).write(to: store.stateFileURL)
+
+        guard case .recovered(let backupURL) = store.load() else {
+            return XCTFail("recovered が返るべき")
+        }
+        XCTAssertTrue(backupURL.lastPathComponent.hasPrefix("state.json.invalid-"))
+    }
+
+    func test_巨大なstateファイルは内容を読む前に退避される() throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: store.stateFileURL.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: store.stateFileURL)
+        try handle.truncate(atOffset: UInt64(StateStore.maximumStateFileByteCount + 1))
+        try handle.close()
+
+        guard case .recovered(let backupURL) = store.load() else {
+            return XCTFail("recovered が返るべき")
+        }
+        XCTAssertTrue(backupURL.lastPathComponent.hasPrefix("state.json.invalid-"))
+        let size = try backupURL.resourceValues(forKeys: [.fileSizeKey]).fileSize
+        XCTAssertEqual(size, StateStore.maximumStateFileByteCount + 1)
+    }
+
     func test_退避先が既にあっても上書きしない() throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try Data("broken-1".utf8).write(to: store.stateFileURL)

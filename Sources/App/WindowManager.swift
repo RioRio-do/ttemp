@@ -41,6 +41,10 @@ final class WindowManager {
 
     /// 左右 Shift／メニューバーからの新規ウィンドウ（SPEC §3.1）。
     func createNoteActivating() {
+        guard controllers.count + unrestoredNotes.count < StateStore.maximumNoteCount else {
+            NSSound.beep()
+            return
+        }
         // SPEC §3.1: 協調的アクティベーション（`NSApp.activate()`）では
         // 他アプリからの譲渡がなく無視され、ウィンドウが前面のアプリの背後に出てしまう。
         // 非推奨だが従来挙動の ignoringOtherApps を使う。

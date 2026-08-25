@@ -2,6 +2,18 @@ import Foundation
 
 /// `state.json` の保存・読込・デバウンス・破損処理（SPEC §10）。
 final class StateStore {
+    static let maximumNoteCount = 32
+    static let maximumStateFileByteCount = 64 * 1_024 * 1_024
+
+    private enum StateValidationError: Error {
+        case invalidFile
+        case fileTooLarge
+        case tooManyNotes
+        case duplicateNoteID
+        case invalidText
+        case invalidFrame
+    }
+
     enum LoadResult: Equatable {
         /// 正常に読めた
         case loaded(AppState)
@@ -73,18 +85,35 @@ final class StateStore {
         guard fileManager.fileExists(atPath: stateFileURL.path) else { return .empty }
 
         do {
-            let data = try Data(contentsOf: stateFileURL)
+            let keys: Set<URLResourceKey> = [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]
+            let values = try stateFileURL.resourceValues(forKeys: keys)
+            guard values.isRegularFile == true, values.isSymbolicLink != true else {
+                throw StateValidationError.invalidFile
+            }
+            guard let fileSize = values.fileSize,
+                  fileSize >= 0,
+                  fileSize <= Self.maximumStateFileByteCount else {
+                throw StateValidationError.fileTooLarge
+            }
+            let handle = try FileHandle(forReadingFrom: stateFileURL)
+            defer { try? handle.close() }
+            let data = try handle.read(upToCount: Self.maximumStateFileByteCount + 1) ?? Data()
+            guard data.count <= Self.maximumStateFileByteCount else {
+                throw StateValidationError.fileTooLarge
+            }
             let state = try JSONDecoder().decode(AppState.self, from: data)
             guard state.version == AppState.currentVersion else {
                 // 未知のバージョンは解釈できない。上書きせず退避する。
                 allowsImagePruning = false
                 return .recovered(backupURL: try quarantineStateFile(reason: "version-\(state.version)"))
             }
+            try Self.validate(state)
             return .loaded(state)
         } catch {
             NSLog("[Ttemp] state.json を読めなかった: \(error.localizedDescription)")
             allowsImagePruning = false
-            if let backup = try? quarantineStateFile(reason: "corrupt") {
+            let reason = error is StateValidationError ? "invalid" : "corrupt"
+            if let backup = try? quarantineStateFile(reason: reason) {
                 return .recovered(backupURL: backup)
             }
             return .empty
@@ -169,15 +198,39 @@ final class StateStore {
     }
 
     private func saveSynchronously(_ state: AppState) throws {
+        try Self.validate(state)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(state)
+        guard data.count <= Self.maximumStateFileByteCount else {
+            throw StateValidationError.fileTooLarge
+        }
         // SPEC §10.4: アトミック書き込み（一時ファイルに書いてから rename）
         try data.write(to: stateFileURL, options: .atomic)
         // state.json を書いた後にだけ孤児画像を掃除する（順序を逆にすると
         // 保存に失敗した場合に参照されている画像を消してしまう）
         pruneUnreferencedImages(keeping: state)
+    }
+
+    private static func validate(_ state: AppState) throws {
+        guard state.notes.count <= maximumNoteCount else {
+            throw StateValidationError.tooManyNotes
+        }
+        guard Set(state.notes.map(\.id)).count == state.notes.count else {
+            throw StateValidationError.duplicateNoteID
+        }
+        for note in state.notes {
+            let frame = note.frame
+            guard frame.x.isFinite,
+                  frame.y.isFinite,
+                  frame.width.isFinite,
+                  frame.height.isFinite else { throw StateValidationError.invalidFrame }
+            if case .text(let text) = note.content,
+               !PlainTextSanitizer.isWithinStorageLimit(text) {
+                throw StateValidationError.invalidText
+            }
+        }
     }
 
     /// 一時的なディスク障害で最後の変更が保存されないまま止まらないよう再試行する。
