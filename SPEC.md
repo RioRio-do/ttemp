@@ -416,6 +416,11 @@ Input Monitoring は §2 の listen-only key/mouse event 検出だけに使う�
 - DMG生成時は一時HFS+ imageのFinder設定を保存してからUDZOへ圧縮する。checksum、`Ttemp.app`、Applications symlink、背景、`.DS_Store`、内部appのcode signatureと実起動を公開前に検証し、作業中に作られる`.fseventsd`やSpotlight管理情報を配布物へ含めない。
 - ZIPはSparkle enclosure専用とし、appcastはDMGではなく`Ttemp.zip`を参照する。ZIP展開後のappも実起動検証する。`scripts/verify-update.swift`はappの`SUPublicEDKey`でZIPとappcastのEdDSA署名を独立検証し、署名必須設定、version/build、archive length、canonical download URLも照合する。
 - GitHub Releaseには`Ttemp.dmg`、`Ttemp.zip`、`appcast.xml`、`SHA256SUMS`を添付し、READMEではDMGを通常ユーザー向けのダウンロードとして案内する。checksumは破損・取り違え検出用で、publisherの独立認証とは表現しない。
+- リリースノートは`release-notes/<lowercase-slug>.md`に保存する。`## 日本語`、`## English`の順に、各言語1〜5個の対応する1行bulletを記す。ユーザーに関係する変更と必要な操作だけを簡潔に書く。`AGENTS.md`に毎回の執筆・確認を作業条件として明記する。
+- `scripts/release-notes.py`は日英section・項目数・UTF-8・8KiB上限・空項目・TODO等を検証する。HTMLと制御文字を許可しない。意味の一致と変更の網羅性は執筆者が実装差分と照合する。
+- 公開時はGitHubの最新の公開済みReleaseのtagを基準に、HEADまでに追加されたノートのcommitted blobだけをファイル名順・言語別にまとめ、`dist/release-notes-vX.Y.N.md`として保存する。GitHub Release本文はこのファイルを`--notes-file`で掲載し、自動生成へfallbackしない。履歴はsourceのノートと各公開tagに残す。
+- 公開済みノートの変更・削除・改名、新規ノートなし、基準tag不足・非ancestor、shallow clone、version不整合・巻き戻りを拒否する。GitHub APIの失敗時も公開を止める。最新tagだけを基準にしない。CIの事前検証は本番鍵の取込前に行う。
+- 採番は`scripts/release-notes.py version`に集約し、`project.yml`のmajor.minorと全履歴のcommit countを使う。現在は`0.1.<commit count>`を維持し、公開だけを理由に1.xへ上げない。これは厳密なSemVer運用ではない。ローカルの配布ビルドも同じ採番を使い、`TTEMP_PREVIOUS_RELEASE`に確認済みの公開tagを必須とし、実appのversion/buildとノートの一致を検証する。
 - 初回artifactは自己署名・未公証であることをREADMEへ明示し、canonical GitHub Release以外からの取得を案内しない。初回起動をGatekeeperに止められた場合はApple公式手順へのリンクと、System Settings → Privacy & Security → `このまま開く / Open Anyway`を案内し、quarantine属性をcommandで削除させない。破損・malware警告の無視を案内しない。Developer ID署名とApple公証へ移行するまで、macOSが初回配布元をpublisherまで検証できないリスクを残存事項として扱う。
 - 公開READMEは日本語の`README.md`と英語の`README.en.md`を分け、同じ行へ日英を重ねない。
 - Release buildは、symlink解決・path標準化後のbundle URLが`/Applications`の真の子でなければruntimeを初期化しない。alertはtitleを`Ttemp を Applications へ / Move Ttemp to Applications`、本文を移動後に再度開く旨の1文、buttonを`Finder で表示 / Show in Finder`と`終了 / Quit`だけにする。要求時は現在のappをFinderで表示して終了する。Debug buildは開発場所から実行できるようこの制約を適用しない。
@@ -453,6 +458,7 @@ CI は少なくとも次を行う。
 4. PRでも使い捨て自己署名証明書でUniversal Releaseを生成し、`scripts/test-release.sh`で実起動、ZIP往復、第三者library拒否、制約を外した負例、署名検証器の負例とローカルSparkle更新を検証する。本番秘密鍵は使わない。
 5. 1〜4はmacOS 15 arm64 / Intel、macOS 26 arm64で行い、全成功を固定名`ビルドとテスト`で集約する。branch protectionのrequired context名を変更しない。
 6. Release workflowでは本番identityで再ビルドし、DMG/ZIP/appcastの存在・構造・署名情報と最終artifactの実起動を検証する。
+7. 日英リリースノートの形式と、生成・欠落・誤version・公開済みノート改変・再利用防止・merge時の採番を独立jobで検証する。このjobも`ビルドとテスト`の成功条件に含める。公開jobでは最新の公開済みReleaseに対するノート生成を必須とする。
 
 ### 13.3 配布版の隔離診断
 

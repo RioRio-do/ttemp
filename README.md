@@ -39,6 +39,7 @@ xcodebuild -project Ttemp.xcodeproj -scheme Ttemp -configuration Debug build
 ## リリース
 
 mainへのpushで、CIがテスト、署名、DMG/ZIP/appcast生成、GitHub Release作成まで行います。
+変更と一緒に[短い日英リリースノート](release-notes/README.md)を追加してください。ノートなしの公開は停止します。
 鍵の準備と検証手順は[docs/SIGNING.md](docs/SIGNING.md)を参照してください。
 
 ## ドキュメント

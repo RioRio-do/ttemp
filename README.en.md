@@ -38,6 +38,7 @@ Verify the release pipeline with disposable keys and isolated data: `./scripts/t
 ## Release
 
 A push to main runs tests, signs the app, builds the DMG/ZIP/appcast, and creates a GitHub Release.
+Include [short Japanese and English release notes](release-notes/README.md) with your changes. Publishing without new notes is blocked.
 See [docs/SIGNING.md](docs/SIGNING.md) for keys and verification.
 
 ## Docs

@@ -1,7 +1,7 @@
 # 署名・鍵・リリース（CI/CD）
 
-Apple Developer アカウントは使わない。リリースは main へ push するだけで
-GitHub Actions（.github/workflows/ci.yml）が全自動で行う。
+Apple Developer アカウントは使わない。日英のリリースノートを用意して main へ push すると、
+GitHub Actions（.github/workflows/ci.yml）がビルドから公開まで行う。
 
 ## 鍵は2つある
 
@@ -44,13 +44,14 @@ GitHub Actions（.github/workflows/ci.yml）が全自動で行う。
 
 main へ push すると:
 
-1. macOS 15（Apple Silicon / Intel）とmacOS 26でunit testと署名済みRelease E2Eを実行する（PRでも本番鍵なしで実行）。全成功を`ビルドとテスト`へ集約する
+1. macOS 15（Apple Silicon / Intel）とmacOS 26でunit testと署名済みRelease E2Eを実行する（PRでも本番鍵なしで実行）。日英ノートの形式・生成処理も独立jobで検証し、全成功を`ビルドとテスト`へ集約する
 2. 通れば、バージョンを採番: `<major.minor>.<mainのコミット数>`
    - major.minor は project.yml の `MARKETING_VERSION` の先頭2要素
    - コミット数は単調増加なので、`CURRENT_PROJECT_VERSION`（Sparkle の
      更新判定に使う整数）も同じ値で自動的に増える。**手でバージョンを
      上げる作業は存在しない**。メジャー/マイナーを上げたいときだけ
-     project.yml の `MARKETING_VERSION` を書き換える
+     project.yml の `MARKETING_VERSION` を書き換える。採番は`scripts/release-notes.py version`へ集約する
+   - GitHubの最新の公開済みReleaseを基準に、未公開ノートを検証する。APIエラー、tag不足、ノートなし・不正、公開済みノートの改変、version不整合では署名前に停止する
 3. XcodeGen 2.46.0 は公式release ZIPを固定SHA-256で検証し、Sparkle 2.9.6 は
    commit `ac2def288cbff5cfc7df3ffef6abdf45b72bcb0a`へ固定してからbuild
 4. 使い捨てのユーザーキーチェーンへ証明書を取り込み、user/System trust store を
@@ -58,7 +59,8 @@ main へ push すると:
    appcast.xml、初回インストール用DMGを生成。Universal appと各helperの署名・実起動、DMGのchecksum・
    内部構造、ZIP展開後・DMG内appの実起動、app内の公開鍵によるZIP/appcast署名とversion・length・URLを公開前に再検証
 5. built commitと同じSHAを`--target`へ明示して`vX.Y.N`のGitHub Releaseを作成し、
-   `Ttemp.dmg`、`Ttemp.zip`、`appcast.xml`、`SHA256SUMS`を添付
+   `Ttemp.dmg`、`Ttemp.zip`、`appcast.xml`、`SHA256SUMS`を添付。
+   本文は`dist/release-notes-vX.Y.N.md`を`--notes-file`で掲載する。GitHubの自動生成ノートは使わない
 
 `Ttemp.dmg` は人が初回インストールするときの成果物。背景は言語に依存しない
 `Ttemp` と矢印だけにし、左のappから右のApplicationsエイリアスへドラッグする構成にする。
@@ -81,6 +83,40 @@ archiveのEdDSA署名を展開前に検証する。
 本文中の同じ文字列ではスキップしない。
 main の履歴を force push で書き換えるとコミット数が巻き戻り採番が壊れるので
 しないこと。
+
+## リリースノート
+
+[release-notes/README.md](../release-notes/README.md)に日英の執筆ルールを置く。
+変更と一緒に短いMarkdownを追加し、各言語1〜5項目でユーザーに関係する変更・必要な操作を記す。
+同じ内容を同じ順番で翻訳する。内部の実装詳細や一般的な宣伝文は不要。
+
+公開する番号はマージ後のコミット数で決まるため、元ファイル名には番号を入れない。
+最新の**公開済みGitHub Release**のtagから追加されたノートだけを、ファイル名順で言語別にまとめる。
+失敗した公開処理が残したtagや、ローカルの最新tagを自動的な基準にしない。
+公開済みノートの変更・削除・改名、片言語の欠落、項目数の不一致、空項目やTODOを拒否する。
+翻訳の意味や変更の網羅性は、実装差分と照合して執筆者が確認する。
+
+履歴は`release-notes/`と各公開tagに残る。未公開のノートは追記・修正できるが、公開済みの訂正は新しいファイルへ書く。
+新規ノートがない場合は公開を止める。公開不要の変更には`[skip release]`を使う。
+
+```bash
+python3 scripts/release-notes.py check
+python3 -B -m unittest discover -s Tests/ReleaseNotes -v
+```
+
+公開前のプレビューは、変更をコミットした後、公開済みtagと全履歴を取得して行う。
+生成はHEADのcommitted blobだけを読み、作業中・未追跡のファイルを本文へ混ぜない。
+
+```bash
+git fetch origin --tags
+PREVIOUS_TAG=$(gh release view --repo RioRio-do/ttemp --json tagName --jq .tagName)
+VERSION=$(python3 scripts/release-notes.py version)
+python3 scripts/release-notes.py render --since "$PREVIOUS_TAG" --version "$VERSION"
+```
+
+現在の`0.1.<commit count>`は維持する。公開だけを理由に1.xへは上げない。
+これはコミット数による採番であり、変更の種類を表す厳密なSemVerではない。
+1.0化と採番方針の変更は、主要操作・保存・更新の安定を確認した節目で別途決める。
 
 ## 起動を壊さない署名
 
@@ -117,8 +153,10 @@ keychainの検索リストは終了時に元へ戻す。GUIセッションのあ
 入力監視の要求、login登録、通常の更新チェックは行わない。
 `--isolated`は手動UI確認用の空メモを開く。正常終了時に診断データを破棄する。
 
-本番鍵のある環境で`./scripts/build-release.sh`を実行しても、生成は`dist/`までであり、
-pushやRelease公開はしない。`setup-release-keys.sh`はGitHub secretsを書き換えるため、検証目的では実行しない。
+本番鍵のある環境では、上の手順で確認したtagを`TTEMP_PREVIOUS_RELEASE`へ渡す。
+`TTEMP_PREVIOUS_RELEASE="$PREVIOUS_TAG" ./scripts/build-release.sh`も生成は`dist/`までであり、
+pushやRelease公開はしない。ローカルでもCIと同じ採番・ノート検証を行う。
+`setup-release-keys.sh`はGitHub secretsを書き換えるため、検証目的では実行しない。
 
 ## なぜ ad-hoc 署名ではだめか（安定署名の理由）
 
@@ -149,7 +187,9 @@ security add-trusted-cert -p codeSign -k ~/Library/Keychains/login.keychain-db /
 <Sparkleのbin>/generate_keys -f signing/sparkle-ed-private-key
 ```
 
-手動リリースは `./scripts/build-release.sh` → 表示される `gh release create …` を実行。
+手動リリースも、最新の公開済みtagを確認して
+`TTEMP_PREVIOUS_RELEASE="$PREVIOUS_TAG" ./scripts/build-release.sh`を実行する。
+表示される`gh release create … --notes-file …`は実際に公開するcommandなので、公開の承認後にだけ実行する。
 
 ## 受け取り側の注意（初回のみ）
 

@@ -1,12 +1,13 @@
 #!/bin/bash
 # Release ビルド → 「Ttemp Signing」で安定署名 → DMG、ZIP、appcast.xml を作る。
 # ローカルでも CI（.github/workflows/ci.yml）でも同じ手順を通すための共通スクリプト。
-# 通常のリリースは main へ push するだけで CI が全自動で行う（docs/SIGNING.md）。
+# 通常のリリースは日英ノートを含めて main へ push すると CI が行う（docs/SIGNING.md）。
 #
-# 環境変数（CI が使う。ローカルでは通常すべて未設定でよい）:
+# 環境変数（ローカルでもTTEMP_PREVIOUS_RELEASEは必須）:
+#   TTEMP_PREVIOUS_RELEASE 最新の公開済みGitHub Release tag。ノートの差分基準
 #   TTEMP_SIGN_IDENTITY  署名 identity（既定: Ttemp Signing）
-#   TTEMP_VERSION        MARKETING_VERSION の上書き（表示用バージョン）
-#   TTEMP_BUILD          CURRENT_PROJECT_VERSION の上書き（Sparkle の更新判定に使う整数）
+#   TTEMP_VERSION        確認用の表示version（省略時はmajor.minor.<commit count>）
+#   TTEMP_BUILD          確認用のbuild番号（省略時はcommit count）
 #   TTEMP_ED_KEY_FILE    Sparkle EdDSA 秘密鍵ファイル。未設定ならログインキーチェーンの鍵を使う
 #   TTEMP_KEYCHAIN       署名に使うキーチェーン。未設定なら既定の検索リスト
 
@@ -18,8 +19,20 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
     exit 1
 fi
 SOURCE_REVISION=$(git rev-parse HEAD)
+if [ -z "${TTEMP_PREVIOUS_RELEASE:-}" ]; then
+    echo "TTEMP_PREVIOUS_RELEASEに最新の公開済みRelease tagを指定してください（docs/SIGNING.md）。" >&2
+    exit 1
+fi
+VERSION="${TTEMP_VERSION:-$(python3 scripts/release-notes.py version)}"
+BUILD="${TTEMP_BUILD:-${VERSION##*.}}"
+if [ "$BUILD" != "${VERSION##*.}" ]; then
+    echo "TTEMP_BUILDがversion内のcommit countと一致しません。" >&2
+    exit 1
+fi
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/ttemp-release.XXXXXX")
 trap 'rm -rf "$WORK_DIR"' EXIT
+python3 scripts/release-notes.py render --since "$TTEMP_PREVIOUS_RELEASE" --version "$VERSION" \
+    > "$WORK_DIR/release-notes.md"
 
 IDENTITY="${TTEMP_SIGN_IDENTITY:-Ttemp Signing}"
 
@@ -42,9 +55,9 @@ XCODE_ARGS=(
     -destination generic/platform=macOS
     -derivedDataPath build/DerivedData
     CODE_SIGN_IDENTITY="$IDENTITY"
+    MARKETING_VERSION="$VERSION"
+    CURRENT_PROJECT_VERSION="$BUILD"
 )
-[ -n "${TTEMP_VERSION:-}" ] && XCODE_ARGS+=(MARKETING_VERSION="$TTEMP_VERSION")
-[ -n "${TTEMP_BUILD:-}" ] && XCODE_ARGS+=(CURRENT_PROJECT_VERSION="$TTEMP_BUILD")
 [ -n "${TTEMP_KEYCHAIN:-}" ] && XCODE_ARGS+=(OTHER_CODE_SIGN_FLAGS="--keychain $TTEMP_KEYCHAIN")
 xcodebuild "${XCODE_ARGS[@]}" build
 
@@ -58,12 +71,18 @@ echo "==> dist/ へ配置"
 mkdir -p dist
 rm -rf dist/Ttemp.app dist/Ttemp.dmg dist/Ttemp.zip dist/appcast.xml dist/SHA256SUMS
 cp -R "$APP" dist/
+NOTES_PATH="dist/release-notes-v$VERSION.md"
+cp "$WORK_DIR/release-notes.md" "$NOTES_PATH"
 ditto -c -k --keepParent dist/Ttemp.app dist/Ttemp.zip
 ditto -x -k dist/Ttemp.zip "$WORK_DIR/unpacked"
 ./scripts/verify-app.sh "$WORK_DIR/unpacked/Ttemp.app"
 
-VERSION=$(defaults read "$PWD/dist/Ttemp.app/Contents/Info" CFBundleShortVersionString)
-BUILD=$(defaults read "$PWD/dist/Ttemp.app/Contents/Info" CFBundleVersion)
+APP_VERSION=$(defaults read "$PWD/dist/Ttemp.app/Contents/Info" CFBundleShortVersionString)
+APP_BUILD=$(defaults read "$PWD/dist/Ttemp.app/Contents/Info" CFBundleVersion)
+if [ "$APP_VERSION" != "$VERSION" ] || [ "$APP_BUILD" != "$BUILD" ]; then
+    echo "ビルドしたappのversion/buildがリリースノートと一致しません。" >&2
+    exit 1
+fi
 
 echo "==> 初回インストール用DMGを生成"
 ./scripts/create-dmg.sh dist/Ttemp.app dist/Ttemp.dmg
@@ -137,4 +156,5 @@ xcrun swift -module-cache-path build/verification-module-cache \
 (cd dist && shasum -a 256 Ttemp.dmg Ttemp.zip appcast.xml > SHA256SUMS)
 
 echo "完了: dist/Ttemp.dmg + dist/Ttemp.zip + dist/appcast.xml + dist/SHA256SUMS (Ttemp $VERSION, build $BUILD, identity: $IDENTITY)"
-echo "手動でリリースする場合: gh release create \"v$VERSION\" dist/Ttemp.dmg dist/Ttemp.zip dist/appcast.xml dist/SHA256SUMS --target \"$SOURCE_REVISION\" --title \"Ttemp $VERSION\""
+echo "リリースノート: $NOTES_PATH"
+echo "手動でリリースする場合: gh release create \"v$VERSION\" dist/Ttemp.dmg dist/Ttemp.zip dist/appcast.xml dist/SHA256SUMS --target \"$SOURCE_REVISION\" --title \"Ttemp $VERSION\" --notes-file \"$NOTES_PATH\""
