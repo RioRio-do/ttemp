@@ -262,7 +262,9 @@ final class StateStoreTests: XCTestCase {
         wait(for: [expectation], timeout: 2)
 
         XCTAssertEqual(callCount, 1)
-        XCTAssertTrue(FileManager.default.fileExists(atPath: store.stateFileURL.path))
+        // Snapshot creation happens on main, but the write runs on the I/O queue.
+        // load() joins that queue; a wall-clock delay cannot prove the write finished.
+        XCTAssertEqual(store.load(), .loaded(AppState()))
     }
 
     func test_変更が途切れなくても最大遅延で必ず保存される() {
@@ -293,7 +295,7 @@ final class StateStoreTests: XCTestCase {
         wait(for: [expectation], timeout: 3)
 
         XCTAssertGreaterThanOrEqual(midStreamCount, 1, "変更が途切れない間も最大遅延で書き出されること")
-        XCTAssertTrue(FileManager.default.fileExists(atPath: store.stateFileURL.path))
+        XCTAssertEqual(store.load(), .loaded(AppState()))
     }
 
     func test_保存後は最大遅延の起点がリセットされる() {

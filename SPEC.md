@@ -441,6 +441,7 @@ Input Monitoring は §2 の listen-only key/mouse event 検出だけに使う�
 
 unit test は App host を起動せず、次の純粋ロジックと永続化境界を直接検証する。
 永続化I/Oの障害は専用protocol経由で注入し、SDKごとに並行性注釈が異なるFoundationクラスを継承しない。
+非同期保存の検証はsnapshot取得と書込完了を区別し、保存queueと同期する読み戻しで結果を確認する。固定時間の待機だけをディスクへの保存完了とみなさない。
 Debug/Releaseの両構成で実行する。テストbundleには配布アプリ用のdeployment post-processingとstripを適用しない。
 
 - Shift chord の成立、無効化、reset。
