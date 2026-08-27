@@ -210,9 +210,19 @@ final class RuntimeDiagnostics {
               let restoredText = manager.controllers.first(where: { $0.mode == .filledText }) else {
             throw Failure(description: "Restored modes differ")
         }
+        guard case .image(let reference) = restoredImage.content else {
+            throw Failure(description: "Missing image reference")
+        }
+        let originals = ImageStore(directory: stateStore.imagesDirectoryURL)
+        let exportingOriginal = try originals.openOriginal(reference)
+        defer { try? exportingOriginal.close() }
         restoredImage.requestClose()
         try await waitFor("Image close did not finish") { manager.controllers.count == 1 }
         try check(clipboard.data(forType: .png) == png, "Close did not preserve original PNG")
+        stateStore.flush()
+        try check(originals.load(reference) == nil, "Closed image was not collected")
+        let exported = try ImageStore.readOriginal(from: exportingOriginal)
+        try check(exported == png, "Closing during export lost the original")
         restoredText.requestClose()
         try await waitFor("Text close did not finish") { manager.controllers.isEmpty }
         try check(clipboard.string(forType: .string) == pasted, "Close did not copy full text")

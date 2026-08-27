@@ -340,6 +340,7 @@ stateはsymbolic linkではないregular file、64 MiB以下、32ノート以下
 - quarantine できない場合も crash せず空で起動する。
 - state を読めなかったセッションでは画像 prune を禁止し、回収可能性を残す。
 - 画像取り込みは原本書込前に共有registryへ登録し、GCの走査・削除とlockで直列化する。main threadでwindowへ取り込んだ後、その時点以降のsnapshotが保存に成功するまで原本を保護する。古いqueued snapshotや保存失敗で解除しない。取り込みをキャンセルした原本は即回収し、初回保存前にclose・置換された原本も次の正常保存で保護を解除する。
+- 画像の書き出しは保存先確定時に原本のread handleを確保してからbackgroundへ渡す。close・画像置換・GCでpathが消えても同じ原本を読めるようにし、64 MiB+1のbounded readで増大も検出する。成否を問わずhandleを閉じ、重い読込とencodeはmain threadで行わない。
 - 正常保存後、参照集合または取り込み保護集合が前回成功時から変化した場合だけ `Images/` を走査する。
 - prune 対象は厳密な `<UUID>.<normalized-ext>` 名を持つ regular file または symbolic link だけ。未参照なら削除する。無関係なファイル、directory、命名不正 entry は触らない。
 - directory 列挙または属性取得が失敗した場合は成功扱いにせず、後続保存で再試行できるようにする。

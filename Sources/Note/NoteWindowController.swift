@@ -668,14 +668,20 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
         }
         panel.beginSheetModal(for: window) { [weak self] response in
             guard response == .OK, let url = panel.url, let self else { return }
-            let reference = imagePayload.reference
-            let imageStore = self.imageStore
+            let original: FileHandle
+            do {
+                original = try self.imageStore.openOriginal(imagePayload.reference)
+            } catch {
+                NSLog("[Ttemp] 画像の書き出しに失敗した: \(error.localizedDescription)")
+                self.window.shake()
+                return
+            }
             // 原本の読込・デコード・再エンコード・書込は巨大画像で重くなるため、
             // 保存先が確定してからバックグラウンドで行う。
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 do {
-                    guard let originalData = imageStore.load(reference),
-                          let data = ImageExporter.encode(originalData: originalData, to: format) else {
+                    let originalData = try ImageStore.readOriginal(from: original)
+                    guard let data = ImageExporter.encode(originalData: originalData, to: format) else {
                         throw ImageSaveError.encodingFailed
                     }
                     try data.write(to: url, options: .atomic)
