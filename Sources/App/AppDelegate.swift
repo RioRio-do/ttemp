@@ -66,6 +66,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         restoreState()
 
+        // Keep language changes on the same path in isolated diagnostics.
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(handleLanguageChange),
+            name: L10n.didChangeNotification,
+            object: nil
+        )
+
         // Exercise the signed production startup and controllers without touching
         // real notes, preferences, login items, clipboard, TCC, or update servers.
         if let diagnostics {
@@ -78,14 +86,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self,
             selector: #selector(handleBringAllToFront),
             name: Self.bringAllToFrontNotification,
-            object: nil
-        )
-
-        // 言語切替でメインメニュー（⌘V などのキー割り当ての親）を組み立て直す
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(handleLanguageChange),
-            name: L10n.didChangeNotification,
             object: nil
         )
 

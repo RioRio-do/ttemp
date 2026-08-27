@@ -535,6 +535,7 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
                     self.installImage(reference: reference,
                                       displayImage: displayImage,
                                       resizeWindow: true)
+                    imageStore.didInstall(reference)
                     self.onStateChanged?()
                 }
             } catch {

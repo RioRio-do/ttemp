@@ -35,7 +35,8 @@ final class WindowManager {
     init(preferences: Preferences = .shared, stateStore: StateStore, clipboard: NSPasteboard = .general) {
         self.preferences = preferences
         self.stateStore = stateStore
-        self.imageStore = ImageStore(directory: stateStore.imagesDirectoryURL)
+        self.imageStore = ImageStore(directory: stateStore.imagesDirectoryURL,
+                                     pendingImports: stateStore.pendingImageImports)
         self.clipboard = clipboard
     }
 

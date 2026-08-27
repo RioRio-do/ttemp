@@ -58,6 +58,8 @@ final class RuntimeDiagnostics {
     func start(windowManager: WindowManager, statusItem: StatusItemController, updater: SPUUpdater) {
         if interactive {
             statusItem.setPermissionWarning(true)
+            preferences.newWindowPinMode = .pinnedKeepEmpty
+            windowManager.createNoteActivating()
             print("TTEMP_ISOLATED_READY")
             fflush(stdout)
             return
@@ -150,6 +152,15 @@ final class RuntimeDiagnostics {
         try check(note.text == "日本語 📝", "Paste undo")
         editor.undoManager?.redo()
         try check(note.text == pasted, "Paste redo")
+        try await Task.sleep(nanoseconds: 50_000_000)
+        editor.setSelectedRange(NSRange(location: 0, length: (note.text as NSString).length))
+        editor.copy(nil)
+        try check(clipboard.string(forType: .string) == pasted, "Copy must use the isolated clipboard")
+        editor.cut(nil)
+        try check(note.text.isEmpty, "Cut must remove selected text")
+        try await Task.sleep(nanoseconds: 50_000_000)
+        editor.undoManager?.undo()
+        try check(note.text == pasted, "Cut undo")
         editor.setSelectedRange(NSRange(location: 0, length: (note.text as NSString).length))
         editor.insertText(String(repeating: "x", count: PlainTextSanitizer.maximumUTF16Length + 1),
                           replacementRange: editor.selectedRange())

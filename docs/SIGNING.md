@@ -44,7 +44,7 @@ GitHub Actions（.github/workflows/ci.yml）が全自動で行う。
 
 main へ push すると:
 
-1. テストが走る（PR でも走る）
+1. macOS 15（Apple Silicon / Intel）とmacOS 26でunit testと署名済みRelease E2Eを実行する（PRでも本番鍵なしで実行）。全成功を`ビルドとテスト`へ集約する
 2. 通れば、バージョンを採番: `<major.minor>.<mainのコミット数>`
    - major.minor は project.yml の `MARKETING_VERSION` の先頭2要素
    - コミット数は単調増加なので、`CURRENT_PROJECT_VERSION`（Sparkle の
@@ -55,8 +55,8 @@ main へ push すると:
    commit `ac2def288cbff5cfc7df3ffef6abdf45b72bcb0a`へ固定してからbuild
 4. 使い捨てのユーザーキーチェーンへ証明書を取り込み、user/System trust store を
    変更せず証明書 fingerprint を直接指定して安定署名し、EdDSA 署名つきZIPと
-   appcast.xml、初回インストール用DMGを生成。app の code signature、DMGのchecksum・
-   内部構造、ZIPとappcastのEdDSA signature、archive lengthを公開前に再検証
+   appcast.xml、初回インストール用DMGを生成。Universal appと各helperの署名・実起動、DMGのchecksum・
+   内部構造、ZIP展開後・DMG内appの実起動、app内の公開鍵によるZIP/appcast署名とversion・length・URLを公開前に再検証
 5. built commitと同じSHAを`--target`へ明示して`vX.Y.N`のGitHub Releaseを作成し、
    `Ttemp.dmg`、`Ttemp.zip`、`appcast.xml`、`SHA256SUMS`を添付
 
@@ -81,6 +81,44 @@ archiveのEdDSA署名を展開前に検証する。
 本文中の同じ文字列ではスキップしない。
 main の履歴を force push で書き換えるとコミット数が巻き戻り採番が壊れるので
 しないこと。
+
+## 起動を壊さない署名
+
+自己署名証明書にはApple Team IDがない。同じ証明書で本体とSparkleを署名しても、
+Hardened Runtimeの既定のlibrary validationでは起動前に拒否される。
+`codesign --verify`の成功だけでは実起動を保証しない。
+
+`scripts/sign-app.sh`は次を必ず一組で行う。
+
+- Sparkle内のhelperから本体へ、内側から同じ証明書で署名。署名に`--deep`を使わない
+- 本体だけにlibrary-validation例外を付与し、Hardened Runtimeは維持
+- macOS 14+のlibrary constraintで、同梱Sparkleの各architectureのCDHashだけを許可
+
+OS libraryを除く別のlibraryは読込拒否される。Sparkleの更新・再署名時にはconstraintも
+再生成する。XcodeのCode Sign on Copyだけではnested helperの署名は揃わない。
+Universal appは`LSRequiresNativeExecution`で各CPUのnative codeを使う。Rosettaが生成する
+AOT binaryは本体の制約に一致しないため、翻訳実行はサポートしない。Intelの実起動はIntel runnerで検証する。
+詳細は[Appleのlibrary constraints](https://developer.apple.com/documentation/security/defining-launch-environment-and-library-constraints)と
+[Sparkleの署名手順](https://sparkle-project.org/documentation/sandboxing/)を参照。
+
+## ローカル検証（公開しない）
+
+```bash
+./scripts/test-release.sh
+```
+
+使い捨て証明書とkeychainでUniversal Releaseを署名し、実起動・ZIP往復・不正libraryの
+拒否を確認する。さらにローカルfeedと専用bundle IDのコピーに対し、Sparkleのhelperによる
+更新と更新後の実起動、不正なfeed/archiveの拒否を検証する。本番鍵も公開サーバーも使わない。
+keychainの検索リストは終了時に元へ戻す。GUIセッションのあるMacで実行する。
+
+`verify-app.sh`は本体・helperの署名とarchitecture、entitlementsを検査し、45秒以内の
+`--self-test`成功を必須にする。データは一時directory・専用defaults・専用pasteboardへ隔離し、
+入力監視の要求、login登録、通常の更新チェックは行わない。
+`--isolated`は手動UI確認用の空メモを開く。正常終了時に診断データを破棄する。
+
+本番鍵のある環境で`./scripts/build-release.sh`を実行しても、生成は`dist/`までであり、
+pushやRelease公開はしない。`setup-release-keys.sh`はGitHub secretsを書き換えるため、検証目的では実行しない。
 
 ## なぜ ad-hoc 署名ではだめか（安定署名の理由）
 
@@ -118,8 +156,12 @@ security add-trusted-cert -p codeSign -k ~/Library/Keychains/login.keychain-db /
 GitHub Releaseの`Ttemp.dmg`を開き、Ttemp.appをApplicationsエイリアスへドラッグする。
 Release版をDMGやDownloadsから直接起動すると、Applicationsへの配置を案内して終了する。
 自己署名アプリを Web 経由で初めて入れるときは Gatekeeper にブロックされるため、
-**このリポジトリの公式GitHub Releaseから入手した場合だけ**、Applications内の
-Ttempを右クリック→「開く」。Developer ID署名とApple公証へ移行するまでは、macOSが
+**このリポジトリの公式GitHub Releaseから入手した場合だけ**、[Appleの案内](https://support.apple.com/ja-jp/102445)に従い、
+システム設定 → プライバシーとセキュリティ →「このまま開く」。破損・malware警告は無視しない。
+Developer ID署名とApple公証へ移行するまでは、macOSが
 初回配布元をpublisherまで検証できない残存リスクがある。quarantine属性をcommandで
 削除する手順は案内しない。
-Sparkle 経由の更新には quarantine が付かないため、2回目以降は何も出ない。
+通常の更新はSparkleが署名を検証して適用する。OS/TCC由来の確認は別途発生し得る。
+
+v0.1.27のように起動前に終了する版では、updater自体も動かない。修正版のDMGから
+Applications内のappを置き換える。メモ保存先と既存の署名identityは変更しない。

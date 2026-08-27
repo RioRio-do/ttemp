@@ -37,3 +37,17 @@ APP="build/DerivedData/Build/Products/Release/Ttemp.app"
 ditto -c -k --keepParent "$APP" "$WORK_DIR/Ttemp.zip"
 ditto -x -k "$WORK_DIR/Ttemp.zip" "$WORK_DIR/unpacked"
 ./scripts/verify-app.sh "$WORK_DIR/unpacked/Ttemp.app"
+
+# Prove the runtime gate rejects a build that retains the launch exception but
+# accidentally loses the replacement library constraint (codesign alone passes).
+codesign --force --sign "$TTEMP_SIGN_IDENTITY" --keychain "$TTEMP_KEYCHAIN" \
+    --options runtime --timestamp=none --entitlements Sources/App/Ttemp.entitlements \
+    "$WORK_DIR/unpacked/Ttemp.app"
+if ./scripts/verify-app.sh "$WORK_DIR/unpacked/Ttemp.app" > "$WORK_DIR/negative.log" 2>&1; then
+    echo "Verifier accepted an unconstrained app" >&2
+    exit 1
+fi
+grep -q 'Library constraint allowed unexpected third-party code' "$WORK_DIR/negative.log"
+echo 'LIBRARY_CONSTRAINT_NEGATIVE_TEST_OK'
+xcrun swift -module-cache-path "$WORK_DIR/swift-cache" scripts/verify-update.swift --self-test
+./scripts/test-update.sh "$APP"

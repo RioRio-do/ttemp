@@ -310,6 +310,67 @@ final class StateStoreTests: XCTestCase {
 
     // MARK: - 画像ファイルの掃除
 
+    func test_取り込み中の画像は以前のスナップショットの保存で削除しない() throws {
+        let images = ImageStore(directory: store.imagesDirectoryURL, pendingImports: store.pendingImageImports)
+        let pending = ImageReference(id: UUID(), fileExtension: "png")
+        try images.save(Data("pending".utf8), reference: pending)
+        // A background import has written the original, but the main-thread
+        // completion has not yet installed its reference into a note.
+        try store.save(AppState())
+        XCTAssertNotNil(images.load(pending))
+        let note = NoteSnapshot(id: UUID(), content: .image(pending), frame: FrameSnapshot(.zero),
+                                isPinned: false, fontSizeOffset: 0)
+        try store.save(AppState(notes: [note]))
+        XCTAssertNotNil(images.load(pending))
+        try store.save(AppState())
+        XCTAssertNil(images.load(pending), "A committed, then closed image must still be pruned")
+    }
+
+    func test_取り込みをキャンセルすると原本と保護を解除する() throws {
+        let images = ImageStore(directory: store.imagesDirectoryURL, pendingImports: store.pendingImageImports)
+        let pending = ImageReference(id: UUID(), fileExtension: "png")
+        try images.save(Data("pending".utf8), reference: pending)
+        images.remove(pending)
+        XCTAssertNil(images.load(pending))
+        store.pendingImageImports.whilePruning(releasing: []) { XCTAssertTrue($0.isEmpty) }
+    }
+
+    func test_画像を最初の保存より前に閉じても孤児を回収する() throws {
+        let images = ImageStore(directory: store.imagesDirectoryURL, pendingImports: store.pendingImageImports)
+        let reference = ImageReference(id: UUID(), fileExtension: "png")
+        try images.save(Data("pending".utf8), reference: reference)
+        try store.save(AppState())
+        XCTAssertNotNil(images.load(reference))
+        images.didInstall(reference)
+        // The window is closed before any state containing the image is saved.
+        try store.save(AppState())
+        XCTAssertNil(images.load(reference))
+    }
+
+    func test_古いスナップショットは後から取り込まれた画像の保護を解除しない() {
+        let imports = store.pendingImageImports
+        let reference = ImageReference(id: UUID(), fileExtension: "png")
+        imports.protect(reference)
+        let oldSnapshot = imports.installedBeforeSnapshot()
+        imports.didInstall(reference)
+        imports.whilePruning(releasing: oldSnapshot) { XCTAssertTrue($0.contains(reference.fileName)) }
+        let newSnapshot = imports.installedBeforeSnapshot()
+        imports.whilePruning(releasing: newSnapshot) { XCTAssertTrue($0.isEmpty) }
+    }
+
+    func test_保存失敗では取り込み済み画像の保護を解除しない() throws {
+        let images = ImageStore(directory: store.imagesDirectoryURL, pendingImports: store.pendingImageImports)
+        let reference = ImageReference(id: UUID(), fileExtension: "png")
+        try images.save(Data("pending".utf8), reference: reference)
+        images.didInstall(reference)
+        let duplicate = makeNote()
+        XCTAssertThrowsError(try store.save(AppState(notes: [duplicate, duplicate])))
+        store.pendingImageImports.whilePruning(releasing: []) { XCTAssertTrue($0.contains(reference.fileName)) }
+        XCTAssertNotNil(images.load(reference))
+        try store.save(AppState())
+        XCTAssertNil(images.load(reference))
+    }
+
     func test_参照されていない画像ファイルは削除される() throws {
         let kept = ImageReference(id: UUID(), fileExtension: "png")
         let orphan = ImageReference(id: UUID(), fileExtension: "png")

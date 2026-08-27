@@ -18,16 +18,18 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
     exit 1
 fi
 SOURCE_REVISION=$(git rev-parse HEAD)
+WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/ttemp-release.XXXXXX")
+trap 'rm -rf "$WORK_DIR"' EXIT
 
 IDENTITY="${TTEMP_SIGN_IDENTITY:-Ttemp Signing}"
 
 if [ -n "${TTEMP_KEYCHAIN:-}" ] && [[ "$IDENTITY" =~ ^[0-9A-Fa-f]{40}$ ]]; then
     # CIの自己署名証明書はheadless trust設定を避けるため、fingerprintで直接選択する。
-    if ! security find-certificate -a -Z "$TTEMP_KEYCHAIN" | grep -Fiq "SHA-1 hash: $IDENTITY"; then
+    if ! security find-certificate -a -Z "$TTEMP_KEYCHAIN" | grep -Fi "SHA-1 hash: $IDENTITY" >/dev/null; then
         echo "コード署名 certificate '$IDENTITY' が $TTEMP_KEYCHAIN に見つかりません。" >&2
         exit 1
     fi
-elif ! security find-identity -v -p codesigning ${TTEMP_KEYCHAIN:+"$TTEMP_KEYCHAIN"} | grep -Fq "\"$IDENTITY\""; then
+elif ! security find-identity -v -p codesigning ${TTEMP_KEYCHAIN:+"$TTEMP_KEYCHAIN"} | grep -F "\"$IDENTITY\"" >/dev/null; then
     echo "コード署名 identity '$IDENTITY' が見つかりません。" >&2
     echo "先に ./scripts/setup-release-keys.sh を実行してください。" >&2
     exit 1
@@ -50,12 +52,15 @@ APP="build/DerivedData/Build/Products/Release/Ttemp.app"
 
 echo "==> helperを含む安定署名とlibrary constraint"
 TTEMP_SIGN_IDENTITY="$IDENTITY" ./scripts/sign-app.sh "$APP"
+./scripts/verify-app.sh "$APP"
 
 echo "==> dist/ へ配置"
 mkdir -p dist
 rm -rf dist/Ttemp.app dist/Ttemp.dmg dist/Ttemp.zip dist/appcast.xml dist/SHA256SUMS
 cp -R "$APP" dist/
 ditto -c -k --keepParent dist/Ttemp.app dist/Ttemp.zip
+ditto -x -k dist/Ttemp.zip "$WORK_DIR/unpacked"
+./scripts/verify-app.sh "$WORK_DIR/unpacked/Ttemp.app"
 
 VERSION=$(defaults read "$PWD/dist/Ttemp.app/Contents/Info" CFBundleShortVersionString)
 BUILD=$(defaults read "$PWD/dist/Ttemp.app/Contents/Info" CFBundleVersion)
@@ -127,6 +132,8 @@ else
 fi
 
 echo "==> 公開assetのSHA-256を記録"
+xcrun swift -module-cache-path build/verification-module-cache \
+    scripts/verify-update.swift dist/Ttemp.app dist/Ttemp.zip dist/appcast.xml
 (cd dist && shasum -a 256 Ttemp.dmg Ttemp.zip appcast.xml > SHA256SUMS)
 
 echo "完了: dist/Ttemp.dmg + dist/Ttemp.zip + dist/appcast.xml + dist/SHA256SUMS (Ttemp $VERSION, build $BUILD, identity: $IDENTITY)"

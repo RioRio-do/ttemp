@@ -145,7 +145,7 @@ test -f "$VERIFY_MOUNT/.background/background.png"
 test -f "$VERIFY_MOUNT/.DS_Store"
 test ! -e "$VERIFY_MOUNT/.fseventsd"
 test ! -e "$VERIFY_MOUNT/.Spotlight-V100"
-codesign --verify --deep --strict --verbose=2 "$VERIFY_MOUNT/Ttemp.app"
+"$SCRIPT_DIR/verify-app.sh" "$VERIFY_MOUNT/Ttemp.app"
 
 detach_dmg "$MOUNTED_DEVICE"
 MOUNTED_DEVICE=

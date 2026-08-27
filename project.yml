@@ -79,6 +79,7 @@ targets:
       - path: Sources/Model/NoteContent.swift
       - path: Sources/Model/AppState.swift
       - path: Sources/Model/StateStore.swift
+      - path: Sources/Model/PendingImageImports.swift
       - path: Sources/Util/PasteboardReader.swift
       - path: Sources/Util/ImageWindowSizing.swift
       - path: Sources/Util/ImageExporter.swift

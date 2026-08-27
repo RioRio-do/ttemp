@@ -20,9 +20,13 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    name: ビルドとテスト
-    runs-on: macos-15
+  checks:
+    name: 検証 (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel, macos-26]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -40,6 +44,21 @@ jobs:
           xcodebuild -project Ttemp.xcodeproj -scheme TtempTests \
             -configuration Debug -destination 'platform=macOS' \
             -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO test
+      - name: 自己署名したReleaseの実起動とZIP往復を検証
+        timeout-minutes: 15
+        run: ./scripts/test-release.sh
+
+  # Keep this exact context name: main branch protection requires it.
+  test:
+    name: ビルドとテスト
+    needs: checks
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: 全環境の検証成功を要求
+        env:
+          CHECK_RESULT: ${{ needs.checks.result }}
+        run: test "$CHECK_RESULT" = success
 
   release:
     name: リリース

@@ -30,10 +30,12 @@ final class ImageStore {
 
     private let directory: URL
     private let fileManager: FileManager
+    private let pendingImports: PendingImageImports?
 
-    init(directory: URL, fileManager: FileManager = .default) {
+    init(directory: URL, fileManager: FileManager = .default, pendingImports: PendingImageImports? = nil) {
         self.directory = directory
         self.fileManager = fileManager
+        self.pendingImports = pendingImports
     }
 
     func url(for reference: ImageReference) -> URL {
@@ -45,8 +47,14 @@ final class ImageStore {
         guard data.count <= Self.defaultImportLimits.maximumEncodedByteCount else {
             throw ImportError.encodedDataTooLarge
         }
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        try data.write(to: url(for: reference), options: .atomic)
+        pendingImports?.protect(reference)
+        do {
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            try data.write(to: url(for: reference), options: .atomic)
+        } catch {
+            pendingImports?.release(reference)
+            throw error
+        }
     }
 
     func load(_ reference: ImageReference) -> Data? {
@@ -56,6 +64,11 @@ final class ImageStore {
 
     func remove(_ reference: ImageReference) {
         try? fileManager.removeItem(at: url(for: reference))
+        pendingImports?.release(reference)
+    }
+
+    func didInstall(_ reference: ImageReference) {
+        pendingImports?.didInstall(reference)
     }
 
     // MARK: - 表示用画像

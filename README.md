@@ -14,7 +14,8 @@
 [Ttemp.dmgをダウンロード](https://github.com/RioRio-do/ttemp/releases/latest/download/Ttemp.dmg)し、
 TtempをApplicationsへドラッグする。
 
-Ttempは自己署名で未公証です。必ず上記の公式GitHub Releaseから入手し、macOSに止められた場合だけApplications内のTtempを右クリックして「開く」。
+Ttempは自己署名で未公証です。公式GitHub Releaseからのみ入手してください。
+初回起動が止められた場合は、[Appleの案内](https://support.apple.com/ja-jp/102445)に従い「システム設定 → プライバシーとセキュリティ → このまま開く」。
 
 ## 入力監視
 
@@ -23,15 +24,17 @@ Ttempは自己署名で未公証です。必ず上記の公式GitHub Releaseか�
 
 ## 必要環境
 
-- macOS 14以降
+- macOS 14以降（Apple Silicon / Intel）
 - ビルド: Xcode、[XcodeGen](https://github.com/yonaskolb/XcodeGen)
 
 ## ビルド
 
 ```bash
 xcodegen generate
-xcodebuild -project Ttemp.xcodeproj -scheme Ttemp -configuration Release build
+xcodebuild -project Ttemp.xcodeproj -scheme Ttemp -configuration Debug build
 ```
+
+配布版の検証（使い捨て鍵・隔離データ）: `./scripts/test-release.sh`
 
 ## リリース
 

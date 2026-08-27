@@ -96,7 +96,11 @@ final class Preferences {
 
     /// `SMAppService` の状態はシステム側が持つため `UserDefaults` には持たない。
     var launchAtLogin: Bool {
-        get { allowsSystemIntegration ? SMAppService.mainApp.status == .enabled : defaults.bool(forKey: "diagnosticLoginItem") }
+        get {
+            allowsSystemIntegration
+                ? SMAppService.mainApp.status == .enabled
+                : defaults.bool(forKey: "diagnosticLoginItem")
+        }
         set {
             guard allowsSystemIntegration else {
                 defaults.set(newValue, forKey: "diagnosticLoginItem")

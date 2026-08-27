@@ -13,7 +13,8 @@ Press both Shift keys for a scratch note.
 
 [Download Ttemp.dmg](https://github.com/RioRio-do/ttemp/releases/latest/download/Ttemp.dmg), then drag Ttemp to Applications.
 
-Ttemp is self-signed and not notarized. Download it only from the official GitHub Release above; if macOS blocks the first launch, right-click Ttemp in Applications and choose Open.
+Ttemp is self-signed and not notarized. Download it only from the official GitHub Release.
+If macOS blocks the first launch, follow [Apple's guidance](https://support.apple.com/en-us/102445): System Settings → Privacy & Security → Open Anyway.
 
 ## Input Monitoring
 
@@ -22,15 +23,17 @@ Notes are stored only on your Mac. Ttemp also works from the menu bar without th
 
 ## Requirements
 
-- macOS 14 or later
+- macOS 14 or later (Apple Silicon / Intel)
 - Build: Xcode and [XcodeGen](https://github.com/yonaskolb/XcodeGen)
 
 ## Build
 
 ```bash
 xcodegen generate
-xcodebuild -project Ttemp.xcodeproj -scheme Ttemp -configuration Release build
+xcodebuild -project Ttemp.xcodeproj -scheme Ttemp -configuration Debug build
 ```
+
+Verify the release pipeline with disposable keys and isolated data: `./scripts/test-release.sh`
 
 ## Release
 

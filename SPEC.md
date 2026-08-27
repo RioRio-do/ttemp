@@ -339,7 +339,8 @@ stateはsymbolic linkではないregular file、64 MiB以下、32ノート以下
 - 読み取り不能な `state.json` は `state.json.corrupt-YYYYMMDD-HHmmss[-N]`、上限・構造違反は`state.json.invalid-YYYYMMDD-HHmmss[-N]`、未知 version は `state.json.version-<version>-YYYYMMDD-HHmmss[-N]` へ rename し、空の表示状態で起動する。state本文は上限+1 byteだけをbounded readし、file sizeの競合で無制限に確保しない。
 - quarantine できない場合も crash せず空で起動する。
 - state を読めなかったセッションでは画像 prune を禁止し、回収可能性を残す。
-- 正常保存後、参照集合が前回成功時から変化した場合だけ `Images/` を走査する。
+- 画像取り込みは原本書込前に共有registryへ登録し、GCの走査・削除とlockで直列化する。main threadでwindowへ取り込んだ後、その時点以降のsnapshotが保存に成功するまで原本を保護する。古いqueued snapshotや保存失敗で解除しない。取り込みをキャンセルした原本は即回収し、初回保存前にclose・置換された原本も次の正常保存で保護を解除する。
+- 正常保存後、参照集合または取り込み保護集合が前回成功時から変化した場合だけ `Images/` を走査する。
 - prune 対象は厳密な `<UUID>.<normalized-ext>` 名を持つ regular file または symbolic link だけ。未参照なら削除する。無関係なファイル、directory、命名不正 entry は触らない。
 - directory 列挙または属性取得が失敗した場合は成功扱いにせず、後続保存で再試行できるようにする。
 
@@ -389,7 +390,9 @@ Input Monitoring は §2 の listen-only key/mouse event 検出だけに使う�
 - Product name `Ttemp`、Bundle ID `com.am921.ttemp`、marketing version `0.1.0`、build version `1`。development languageは`en`、`CFBundleLocalizations`は`en`と`ja`。
 - Swift compiler warningはDebug/Releaseともerrorとして扱う。
 - App Sandbox は無効。Hardened Runtime は有効。現行配布は ad-hoc/self signing を前提とする。
-- Release は `-Osize`、LTO、dead-code stripping、post-processing、reflection metadata `none`。
+- 自己署名にはApple Team IDがないため、本体に限り`com.apple.security.cs.disable-library-validation`を付与する。配布署名では必ず、同梱Sparkleの各architectureのCDHashだけを許すmacOS 14+のlibrary constraintを同時に付ける。OS libraryはOS側で除外される。それ以外の第三者libraryの読込を許してはならない。
+- Release は`arm64 x86_64`のUniversal、`ONLY_ACTIVE_ARCH=NO`、`-Osize`、LTO、dead-code stripping、post-processing、reflection metadata `none`。配布ビルドは`generic/platform=macOS`を明示する。
+- `LSRequiresNativeExecution=true`で各CPUのnative codeを実行する。Rosetta AOTの変換物は本体のlibrary constraintに一致しないため、Finderから翻訳起動を選べないようにする。CLIによるRosetta強制実行は対応範囲外。Intelの実起動はIntel runnerで検証する。
 - AppIcon は asset catalog の10 renditionを全て持ち、16〜1024 pixelの必要 slotを欠かさない。
 - menu bar icon は asset ではなく SF Symbols を使う。
 
@@ -407,11 +410,12 @@ Input Monitoring は §2 の listen-only key/mouse event 検出だけに使う�
 ### 12.4 Release
 
 - `scripts/build-release.sh` はtracked fileがcleanなcommitからだけ実行し、署名済みRelease app、初回インストール用`Ttemp.dmg`、Sparkle更新用`Ttemp.zip`、各EdDSA signature、署名済み`appcast.xml`、`SHA256SUMS`を再現可能な手順で生成する。
+- `scripts/sign-app.sh`はSparkleのInstaller、Autoupdate、Updater、Downloader、framework、本体を内側から順に同じ証明書とHardened Runtimeで署名する。Downloaderのvendor entitlementsを維持し、helperへ本体のlibrary-validation例外を付けない。`--deep`は検証専用とし署名には使わない。
 - DMGは660×400 pointのFinder icon viewとし、背景の文字は`Ttemp`だけ、中央に右向き矢印を置く。左に`Ttemp.app`、右に`/Applications`を指す`Applications` symlinkを置き、言語依存の注釈は表示しない。
-- DMG生成時は一時HFS+ imageのFinder設定を保存してからUDZOへ圧縮する。checksum、`Ttemp.app`、Applications symlink、背景、`.DS_Store`、内部appのcode signatureを公開前に検証し、作業中に作られる`.fseventsd`やSpotlight管理情報を配布物へ含めない。
-- ZIPはSparkle enclosure専用とし、appcastはDMGではなく`Ttemp.zip`を参照する。ZIP EdDSA signature、appcast XMLとそのEdDSA signature、archive lengthを公開前に再検証する。
+- DMG生成時は一時HFS+ imageのFinder設定を保存してからUDZOへ圧縮する。checksum、`Ttemp.app`、Applications symlink、背景、`.DS_Store`、内部appのcode signatureと実起動を公開前に検証し、作業中に作られる`.fseventsd`やSpotlight管理情報を配布物へ含めない。
+- ZIPはSparkle enclosure専用とし、appcastはDMGではなく`Ttemp.zip`を参照する。ZIP展開後のappも実起動検証する。`scripts/verify-update.swift`はappの`SUPublicEDKey`でZIPとappcastのEdDSA署名を独立検証し、署名必須設定、version/build、archive length、canonical download URLも照合する。
 - GitHub Releaseには`Ttemp.dmg`、`Ttemp.zip`、`appcast.xml`、`SHA256SUMS`を添付し、READMEではDMGを通常ユーザー向けのダウンロードとして案内する。checksumは破損・取り違え検出用で、publisherの独立認証とは表現しない。
-- 初回artifactは自己署名・未公証であることをREADMEへ明示し、canonical GitHub Release以外からの取得を案内しない。Gatekeeperに止められた場合の導線はApplications内のappを右クリックして`開く / Open`だけとし、quarantine属性をcommandで削除させない。Developer ID署名とApple公証へ移行するまで、macOSが初回配布元をpublisherまで検証できないリスクを残存事項として扱う。
+- 初回artifactは自己署名・未公証であることをREADMEへ明示し、canonical GitHub Release以外からの取得を案内しない。初回起動をGatekeeperに止められた場合はApple公式手順へのリンクと、System Settings → Privacy & Security → `このまま開く / Open Anyway`を案内し、quarantine属性をcommandで削除させない。破損・malware警告の無視を案内しない。Developer ID署名とApple公証へ移行するまで、macOSが初回配布元をpublisherまで検証できないリスクを残存事項として扱う。
 - 公開READMEは日本語の`README.md`と英語の`README.en.md`を分け、同じ行へ日英を重ねない。
 - Release buildは、symlink解決・path標準化後のbundle URLが`/Applications`の真の子でなければruntimeを初期化しない。alertはtitleを`Ttemp を Applications へ / Move Ttemp to Applications`、本文を移動後に再度開く旨の1文、buttonを`Finder で表示 / Show in Finder`と`終了 / Quit`だけにする。要求時は現在のappをFinderで表示して終了する。Debug buildは開発場所から実行できるようこの制約を適用しない。
 - `scripts/setup-release-keys.sh` と `docs/SIGNING.md` を signing/setup の運用手順とする。
@@ -434,7 +438,7 @@ unit test は App host を起動せず、次の純粋ロジックと永続化境
 - global/offset font model、shortcut、modifier migration。
 - image point sizing、format list、actual ImageIO conversion。
 - image store の原本保持、形式判定、regular-file/byte/frame/pixel上限、display image。
-- state round-trip、debounce/max-delay、monotonic clock、retry、byte/note/text/ID上限、quarantine、extension normalization/path traversal 防止、managed-file 限定 prune。
+- state round-trip、debounce/max-delay、monotonic clock、retry、byte/note/text/ID上限、quarantine、extension normalization/path traversal 防止、managed-file 限定 prune、非同期画像取り込みと保存・削除の競合。
 - 日本語/英語選択と pin-mode migration。
 - Applications配下判定のdirect/nested path、DMG path、類似prefix、境界値。
 
@@ -445,9 +449,19 @@ CI は少なくとも次を行う。
 1. 固定versionとSHA-256を検証したXcodeGenでprojectを生成し、Sparkleの固定revisionを解決する。
 2. code signing を無効化した Debug app build を明示的に成功させる。
 3. `TtempTests` を実行して全 test を成功させる。
-4. Release workflow では Release build、DMG/ZIP/appcastの存在・構造・署名情報を検証する。
+4. PRでも使い捨て自己署名証明書でUniversal Releaseを生成し、`scripts/test-release.sh`で実起動、ZIP往復、第三者library拒否、制約を外した負例、署名検証器の負例とローカルSparkle更新を検証する。本番秘密鍵は使わない。
+5. 1〜4はmacOS 15 arm64 / Intel、macOS 26 arm64で行い、全成功を固定名`ビルドとテスト`で集約する。branch protectionのrequired context名を変更しない。
+6. Release workflowでは本番identityで再ビルドし、DMG/ZIP/appcastの存在・構造・署名情報と最終artifactの実起動を検証する。
 
-### 13.3 手動確認
+### 13.3 配布版の隔離診断
+
+- 本体の`--self-test`は一意な一時state directory、専用UserDefaults suite、専用copy/paste用pasteboardを使う。既存メモ、一般クリップボード、ログイン項目を変更せず、TCC要求・event tap・ネットワーク更新を開始しない。
+- 明示的な診断モードに限りApplications制約と単一インスタンス制約を外し、通常のcontrollerでstatus item、日英メニュー、テキスト入力・paste・undo/redo・上限、文字サイズ・pin、画像import、状態保存復元、close時copy、最後のwindow後の常駐を検証する。成功markerと終了codeを両方要求し、外部watchdogを45秒にする。
+- `--probe-library PATH`は`--self-test`専用。実在する署名済み第三者dylibがOSのlibrary constraintで拒否されることを確認する。
+- `--isolated`は同じ隔離データで手動UI確認用の空メモを開く。通常のmain menuと言語変更経路を使い、login設定は専用defaults内だけで模擬する。正常終了時に診断データを破棄する。
+- `scripts/test-update.sh`は同じ固定revisionのSparkle CLIをbuildし、一意なbundle IDのappコピーと使い捨てEdDSA鍵、127.0.0.1だけのfeedで署名不正の拒否・helperによる更新・更新後の実起動を確認する。実アプリと公開feedは変更しない。
+
+### 13.4 手動確認
 
 OS/TCC/AppKit UI 依存で unit test 化しにくい項目は release 前に実機確認する。
 
