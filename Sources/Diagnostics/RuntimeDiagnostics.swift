@@ -2,7 +2,8 @@ import AppKit
 import Sparkle
 
 /// Opt-in diagnostics for the *packaged executable*, not an unsigned test host.
-/// All writable app state is isolated; no TCC, login registration or updater starts.
+/// App data is isolated; OS menu-bar registration still uses the app's bundle ID.
+/// No TCC, login registration or updater starts.
 final class RuntimeDiagnostics {
     let preferences: Preferences
     let stateStore: StateStore
@@ -13,6 +14,7 @@ final class RuntimeDiagnostics {
     private let interactive: Bool
     private let probeLibrary: String?
     private var checkCount = 0
+    private var statusItemInteractions = StatusItemInteractionCheck()
 
     private struct Failure: Error, CustomStringConvertible {
         let description: String
@@ -22,8 +24,23 @@ final class RuntimeDiagnostics {
         let args = CommandLine.arguments
         let automated = args.contains("--self-test")
         let interactive = args.contains("--isolated")
-        guard automated || interactive else { return nil }
+        let disposableCI = args.contains("--disposable-ci")
+        guard automated || interactive else {
+            if DiagnosticLaunchPolicy.isTestIdentifier(Bundle.main.bundleIdentifier),
+               Bundle.main.bundleIdentifier != DiagnosticLaunchPolicy.developmentIdentifier {
+                throw Failure(description: "Test apps require --self-test or --isolated")
+            }
+            guard !disposableCI && !args.contains("--probe-library") else {
+                throw Failure(description: "Diagnostic options require --self-test")
+            }
+            return nil
+        }
         guard automated != interactive else { throw Failure(description: "Choose one diagnostic mode") }
+        guard DiagnosticLaunchPolicy.allows(identifier: Bundle.main.bundleIdentifier,
+                                            interactive: interactive, disposableCI: disposableCI,
+                                            environment: ProcessInfo.processInfo.environment) else {
+            throw Failure(description: "Diagnostics require a development/test bundle ID; use scripts/test-release.sh. Production diagnostics are restricted to disposable CI.")
+        }
         var probe: String?
         if let index = args.firstIndex(of: "--probe-library") {
             guard automated, args.indices.contains(index + 1), args[index + 1].hasPrefix("/") else {
@@ -57,6 +74,11 @@ final class RuntimeDiagnostics {
 
     func start(windowManager: WindowManager, statusItem: StatusItemController, updater: SPUUpdater) {
         if interactive {
+            statusItem.onMouseInteraction = { [weak self] type in
+                guard let self, self.statusItemInteractions.record(type) else { return }
+                print("TTEMP_STATUS_ITEM_INTERACTION_OK")
+                fflush(stdout)
+            }
             statusItem.setPermissionWarning(true)
             preferences.newWindowPinMode = .pinnedKeepEmpty
             windowManager.createNoteActivating()
@@ -114,7 +136,10 @@ final class RuntimeDiagnostics {
                                 updater: SPUUpdater) async throws {
         try check(NSApp.activationPolicy() == .accessory, "Dockless activation policy")
         try check(NSApp.mainMenu != nil, "Missing responder-chain menu")
-        try check(statusItem.isReady, "Missing status item, image or action target")
+        try check(statusItem.isConfigured, "Invalid status item configuration")
+        // NSStatusItem.isVisible expresses requested visibility, not actual screen presence.
+        // Do not turn a successful runtime test into an assertion about OS presentation.
+        print("TTEMP_STATUS_ITEM_VISIBILITY_UNVERIFIED")
         try check(!updater.canCheckForUpdates, "Diagnostics must not start network updates")
         if let probeLibrary {
             let handle = dlopen(probeLibrary, RTLD_NOW | RTLD_LOCAL)
@@ -129,7 +154,7 @@ final class RuntimeDiagnostics {
             let title = language == .japanese ? "新規メモ" : "New Note"
             try check(statusItem.makeMenu().items.first?.title == title, "Menu language did not switch")
             statusItem.setPermissionWarning(true)
-            try check(statusItem.isReady, "Missing permission-warning icon")
+            try check(statusItem.isConfigured, "Invalid permission-warning icon configuration")
             try check(statusItem.makeMenu().items.count > 7, "Missing permission menu action")
         }
         statusItem.setPermissionWarning(false)
@@ -238,6 +263,6 @@ final class RuntimeDiagnostics {
         stateStore.flush()
         guard case .loaded(let empty) = diskStore.load() else { throw Failure(description: "Empty reload failed") }
         try check(empty.notes.isEmpty, "Closed notes were persisted")
-        try check(statusItem.isReady, "Status item disappeared after last window closed")
+        try check(statusItem.isConfigured, "Status item configuration lost after last window closed")
     }
 }

@@ -10,6 +10,8 @@ final class StatusItemController: NSObject {
     var onOpenSettings: (() -> Void)?
     /// 「アップデートを確認…」。Sparkle の updater（AppDelegate 持ち）に委ねる
     var onCheckForUpdates: (() -> Void)?
+    /// Used only by isolated manual diagnostics, after the normal click action.
+    var onMouseInteraction: ((NSEvent.EventType?) -> Void)?
 
     /// 一覧のサムネイルを収める上限。極端な横長画像でもメニュー幅を押し広げない。
     private static let thumbnailMaxSize = NSSize(width: 48, height: 16)
@@ -39,8 +41,11 @@ final class StatusItemController: NSObject {
         NotificationCenter.default.removeObserver(self)
     }
 
-    var isReady: Bool {
-        statusItem.isVisible && statusItem.button?.image != nil && statusItem.button?.target === self
+    /// Configuration only. macOS can hide a correctly configured status item.
+    /// https://developer.apple.com/documentation/appkit/nsstatusitem/isvisible
+    var isConfigured: Bool {
+        statusItem.isVisible && statusItem.button?.image != nil
+            && statusItem.button?.target === self && statusItem.button?.action == #selector(handleClick)
     }
 
     @objc private func languageDidChange() {
@@ -69,12 +74,14 @@ final class StatusItemController: NSObject {
     }
 
     @objc private func handleClick() {
-        if NSApp.currentEvent?.type == .rightMouseUp {
+        let eventType = NSApp.currentEvent?.type
+        if eventType == .rightMouseUp {
             showMenu()
         } else {
             // SPEC §3.4: 左クリックで全ウィンドウを前面に
             windowManager.bringAllToFront()
         }
+        onMouseInteraction?(eventType)
     }
 
     private func showMenu() {

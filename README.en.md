@@ -33,7 +33,9 @@ xcodegen generate
 xcodebuild -project Ttemp.xcodeproj -scheme Ttemp -configuration Debug build
 ```
 
-Verify the release pipeline with disposable keys and isolated data: `./scripts/test-release.sh`
+Debug builds use a separate app ID and note storage.
+Verify the release pipeline with a dedicated app ID, disposable keys, and isolated data: `./scripts/test-release.sh`
+Check actual menu-bar visibility [separately](docs/SIGNING.md#ローカル検証公開しない).
 
 ## Release
 

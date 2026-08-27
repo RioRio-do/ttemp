@@ -64,6 +64,10 @@ targets:
         CODE_SIGN_STYLE: Manual
         CODE_SIGN_IDENTITY: "-"
         COMBINE_HIDPI_IMAGES: YES
+      configs:
+        Debug:
+          # Development launches must not share the installed app's menu-bar identity.
+          PRODUCT_BUNDLE_IDENTIFIER: com.am921.ttemp.development
 
   TtempTests:
     type: bundle.unit-test
@@ -90,7 +94,12 @@ targets:
       - path: Sources/Settings/Preferences.swift
       - path: Sources/Util/L10n.swift
       - path: Sources/App/ApplicationLocation.swift
+      - path: Sources/Diagnostics/DiagnosticLaunchPolicy.swift
+      - path: Sources/Diagnostics/StatusItemInteractionCheck.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.am921.ttemp.tests
         GENERATE_INFOPLIST_FILE: YES
+        # XCTest is a loadable test bundle, not a stripped distribution executable.
+        DEPLOYMENT_POSTPROCESSING: NO
+        STRIP_INSTALLED_PRODUCT: NO

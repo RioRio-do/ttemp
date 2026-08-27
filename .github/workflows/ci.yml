@@ -32,7 +32,7 @@ jobs:
         run: |
           python3 scripts/release-notes.py check
           python3 -B -m unittest discover -s Tests/ReleaseNotes -v
-      - name: 更新fixtureの起動を検証
+      - name: 診断の起動制限と更新fixtureを検証
         run: python3 -B -m unittest discover -s Tests/Distribution -v
 
   checks:
@@ -56,9 +56,11 @@ jobs:
             CODE_SIGNING_ALLOWED=NO build
       - name: テスト
         run: |
-          xcodebuild -project Ttemp.xcodeproj -scheme TtempTests \
-            -configuration Debug -destination "platform=macOS,arch=$(uname -m)" \
-            -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO test
+          for configuration in Debug Release; do
+            xcodebuild -project Ttemp.xcodeproj -scheme TtempTests \
+              -configuration "$configuration" -destination "platform=macOS,arch=$(uname -m)" \
+              -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO test
+          done
       - name: 自己署名したReleaseの実起動とZIP往復を検証
         timeout-minutes: 15
         run: ./scripts/test-release.sh
@@ -168,6 +170,8 @@ jobs:
         env:
           TTEMP_VERSION: ${{ steps.version.outputs.version }}
           TTEMP_BUILD: ${{ steps.version.outputs.build }}
+          # Explicit opt-in, additionally checked against GitHub's hosted-runner variables.
+          TTEMP_DISPOSABLE_CI: "1"
           SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
         run: |
           if [ -z "$SPARKLE_ED_PRIVATE_KEY" ]; then

@@ -1,5 +1,5 @@
 #!/bin/bash
-# PR-safe production-signing test. Disposable self-signed identity; no GitHub secrets.
+# PR-safe signing test. Disposable identity, app ID and data; no GitHub secrets.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/ttemp-release-test.XXXXXX")
@@ -31,6 +31,8 @@ security list-keychains -d user -s "$KEYCHAIN" "${ORIGINAL_KEYCHAINS[@]}"
 export TTEMP_KEYCHAIN="$KEYCHAIN"
 TTEMP_SIGN_IDENTITY=$(/usr/bin/openssl x509 -in "$WORK_DIR/cert.pem" -noout -fingerprint -sha1 | sed 's/^.*=//;s/://g')
 export TTEMP_SIGN_IDENTITY
+export TTEMP_TEST_DERIVED_DATA="$PWD/build/RuntimeTests"
+RUNTIME_BUNDLE_ID="com.am921.ttemp.runtime-test.$(uuidgen)"
 
 # Match the production keychain setup and fail before building if the imported
 # certificate/private-key pair is not usable on this macOS version.
@@ -45,9 +47,12 @@ echo 'SIGNING_IDENTITY_TEST_OK'
 
 xcodegen generate
 xcodebuild -project Ttemp.xcodeproj -scheme Ttemp -configuration Release \
-    -destination 'generic/platform=macOS' -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO build
-APP="build/DerivedData/Build/Products/Release/Ttemp.app"
+    -destination 'generic/platform=macOS' -derivedDataPath "$TTEMP_TEST_DERIVED_DATA" \
+    PRODUCT_BUNDLE_IDENTIFIER="$RUNTIME_BUNDLE_ID" CODE_SIGNING_ALLOWED=NO build
+APP="$TTEMP_TEST_DERIVED_DATA/Build/Products/Release/Ttemp.app"
+test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")" = "$RUNTIME_BUNDLE_ID"
 ./scripts/sign-app.sh "$APP"
+python3 scripts/diagnostic-launch.py check-rejections "$APP"
 ./scripts/verify-app.sh "$APP"
 ditto -c -k --keepParent "$APP" "$WORK_DIR/Ttemp.zip"
 ditto -x -k "$WORK_DIR/Ttemp.zip" "$WORK_DIR/unpacked"
