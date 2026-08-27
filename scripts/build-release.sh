@@ -37,6 +37,7 @@ echo "==> プロジェクト生成とビルド"
 xcodegen generate
 XCODE_ARGS=(
     -project Ttemp.xcodeproj -scheme Ttemp -configuration Release
+    -destination generic/platform=macOS
     -derivedDataPath build/DerivedData
     CODE_SIGN_IDENTITY="$IDENTITY"
 )
@@ -47,8 +48,8 @@ xcodebuild "${XCODE_ARGS[@]}" build
 
 APP="build/DerivedData/Build/Products/Release/Ttemp.app"
 
-echo "==> 署名の検証"
-codesign --verify --deep --strict --verbose=2 "$APP"
+echo "==> helperを含む安定署名とlibrary constraint"
+TTEMP_SIGN_IDENTITY="$IDENTITY" ./scripts/sign-app.sh "$APP"
 
 echo "==> dist/ へ配置"
 mkdir -p dist

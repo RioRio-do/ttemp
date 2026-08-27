@@ -2,6 +2,7 @@ import AppKit
 
 /// 画像モードの表示ビュー（SPEC §6.2 / §6.3）。
 final class NoteImageView: NSImageView {
+    var clipboard: NSPasteboard = .general
     /// ペースト／ドロップの受け口（モード遷移の判定は `NoteWindowController` が行う）
     weak var pasteHandler: NotePasteHandling?
     /// 右クリックメニューの供給元
@@ -75,7 +76,7 @@ final class NoteImageView: NSImageView {
 
     @objc func paste(_ sender: Any?) {
         // SPEC §6.1: 画像モード中の画像は置き換え、テキストは拒否。判定は handler 側。
-        _ = pasteHandler?.handlePasteboard(.general, isDrop: false)
+        _ = pasteHandler?.handlePasteboard(clipboard, isDrop: false)
     }
 
     /// SPEC §6.3: 画像モードの ⌘A は何もしない（選択の概念がない）。

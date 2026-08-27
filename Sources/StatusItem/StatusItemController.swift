@@ -35,7 +35,12 @@ final class StatusItemController: NSObject {
     }
 
     deinit {
+        NSStatusBar.system.removeStatusItem(statusItem)
         NotificationCenter.default.removeObserver(self)
+    }
+
+    var isReady: Bool {
+        statusItem.isVisible && statusItem.button?.image != nil && statusItem.button?.target === self
     }
 
     @objc private func languageDidChange() {
@@ -73,6 +78,13 @@ final class StatusItemController: NSObject {
     }
 
     private func showMenu() {
+        // Attaching the menu only while it is open preserves the left-click action.
+        statusItem.menu = makeMenu()
+        statusItem.button?.performClick(nil)
+        statusItem.menu = nil
+    }
+
+    func makeMenu() -> NSMenu {
         let menu = NSMenu()
 
         // SPEC §8.3: 入力監視が未付与でもアプリを使えるようにするため必ず置く
@@ -127,10 +139,7 @@ final class StatusItemController: NSObject {
                      action: #selector(quit), keyEquivalent: "")
             .target = self
 
-        // SPEC §8.3: 表示直後に menu を外して左クリック分岐を保つ
-        statusItem.menu = menu
-        statusItem.button?.performClick(nil)
-        statusItem.menu = nil
+        return menu
     }
 
     @objc private func newWindow() {

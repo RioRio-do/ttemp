@@ -35,6 +35,7 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
 
     private let imageStore: ImageStore
     private let preferences: Preferences
+    private let clipboard: NSPasteboard
 
     /// SPEC §3.2 / §3.3: 最前面固定
     var isPinned = false {
@@ -122,11 +123,13 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
          frame: NSRect,
          globalFontSize: CGFloat = FontSizeModel.defaultGlobalSize,
          imageStore: ImageStore,
-         preferences: Preferences = .shared) {
+         preferences: Preferences = .shared,
+         clipboard: NSPasteboard = .general) {
         self.id = id
         self.globalFontSize = globalFontSize
         self.imageStore = imageStore
         self.preferences = preferences
+        self.clipboard = clipboard
         window = NoteWindow(contentRect: frame)
 
         let contentBounds = window.contentView?.bounds ?? NSRect(origin: .zero, size: frame.size)
@@ -171,6 +174,7 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
         window.shortcutHandler = self
         textView.delegate = self
         textView.pasteHandler = self
+        textView.clipboard = clipboard
         textView.onEscape = { [weak self] in self?.requestClose() }
         textView.scrollHandler = { [weak self] event in self?.handleScrollWheel(event) ?? false }
         textView.contextMenuProvider = { [weak self] in self?.makeTextContextMenu() }
@@ -582,6 +586,7 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
         let view = NoteImageView(frame: window.contentView?.bounds ?? .zero)
         view.autoresizingMask = [.width, .height]
         view.pasteHandler = self
+        view.clipboard = clipboard
         view.onCopy = { [weak self] in self?.copyImageToClipboard() }
         view.menuProvider = { [weak self] in self?.makeImageContextMenu() }
         view.scrollHandler = { [weak self] event in self?.handleScrollWheel(event) ?? false }
@@ -640,7 +645,7 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
         }
         // 原本が消えて表示画像の変換にも失敗した場合、既存クリップボードを空にしない。
         guard !representations.isEmpty else { return }
-        let pasteboard = NSPasteboard.general
+        let pasteboard = clipboard
         pasteboard.clearContents()
         for (data, type) in representations {
             pasteboard.setData(data, forType: type)
@@ -779,7 +784,7 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
             copyImageToClipboard()
             return
         }
-        let pasteboard = NSPasteboard.general
+        let pasteboard = clipboard
         pasteboard.clearContents()
         pasteboard.setString(textView.string, forType: .string)
     }

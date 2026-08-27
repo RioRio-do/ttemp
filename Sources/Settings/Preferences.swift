@@ -20,9 +20,11 @@ final class Preferences {
     }
 
     private let defaults: UserDefaults
+    private let allowsSystemIntegration: Bool
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, allowsSystemIntegration: Bool = true) {
         self.defaults = defaults
+        self.allowsSystemIntegration = allowsSystemIntegration
     }
 
     /// SPEC §7.1: グローバル文字サイズ。範囲外の値は保持せずクランプする。
@@ -94,8 +96,12 @@ final class Preferences {
 
     /// `SMAppService` の状態はシステム側が持つため `UserDefaults` には持たない。
     var launchAtLogin: Bool {
-        get { SMAppService.mainApp.status == .enabled }
+        get { allowsSystemIntegration ? SMAppService.mainApp.status == .enabled : defaults.bool(forKey: "diagnosticLoginItem") }
         set {
+            guard allowsSystemIntegration else {
+                defaults.set(newValue, forKey: "diagnosticLoginItem")
+                return
+            }
             let service = SMAppService.mainApp
             do {
                 if newValue {

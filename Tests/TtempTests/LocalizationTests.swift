@@ -2,20 +2,16 @@ import XCTest
 
 /// SPEC §9 / §12.1: 実行時言語切替と、言語に依存する表示名を検証する。
 final class LocalizationTests: XCTestCase {
-    private var savedLanguage: Any?
+    private let suite = "Ttemp.LocalizationTests.\(UUID().uuidString)"
 
     override func setUp() {
         super.setUp()
-        savedLanguage = UserDefaults.standard.object(forKey: L10n.defaultsKey)
-        UserDefaults.standard.removeObject(forKey: L10n.defaultsKey)
+        L10n.defaults = UserDefaults(suiteName: suite)!
     }
 
     override func tearDown() {
-        if let savedLanguage {
-            UserDefaults.standard.set(savedLanguage, forKey: L10n.defaultsKey)
-        } else {
-            UserDefaults.standard.removeObject(forKey: L10n.defaultsKey)
-        }
+        L10n.defaults.removePersistentDomain(forName: suite)
+        L10n.defaults = .standard
         super.tearDown()
     }
 

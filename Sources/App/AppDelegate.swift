@@ -5,9 +5,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// SPEC §1: 2つ目のインスタンスは既存インスタンスに「全ウィンドウを前面に」を依頼して終了する
     static let bringAllToFrontNotification = Notification.Name("com.am921.ttemp.bringAllToFront")
 
-    private let preferences = Preferences.shared
-    private let stateStore = StateStore()
-    private lazy var windowManager = WindowManager(preferences: preferences, stateStore: stateStore)
+    private let preferences: Preferences
+    private let stateStore: StateStore
+    private let diagnostics: RuntimeDiagnostics?
+    private lazy var windowManager = WindowManager(preferences: preferences, stateStore: stateStore,
+                                                   clipboard: diagnostics?.clipboard ?? .general)
     private let eventTap = EventTapController()
     private let permissionMonitor = PermissionMonitor()
     private var hasStartedRuntime = false
@@ -19,14 +21,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
     private lazy var onboardingController = OnboardingWindowController(preferences: preferences)
     /// 自動更新（docs/SIGNING.md）。生成した時点で定期チェックが動き出す
-    private lazy var updaterController = SPUStandardUpdaterController(startingUpdater: true,
+    private lazy var updaterController = SPUStandardUpdaterController(startingUpdater: diagnostics == nil,
                                                                       updaterDelegate: nil,
                                                                       userDriverDelegate: nil)
 
+    init(diagnostics: RuntimeDiagnostics? = nil) {
+        self.diagnostics = diagnostics
+        preferences = diagnostics?.preferences ?? .shared
+        stateStore = diagnostics?.stateStore ?? StateStore()
+        super.init()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
-        guard !terminateIfAlreadyRunning() else { return }
+        guard diagnostics != nil || !terminateIfAlreadyRunning() else { return }
 #if !DEBUG
-        guard continueOnlyIfInstalledInApplications() else { return }
+        guard diagnostics != nil || continueOnlyIfInstalledInApplications() else { return }
 #endif
         hasStartedRuntime = true
 
@@ -39,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let statusItem = StatusItemController(windowManager: windowManager)
         statusItem.onOpenSettings = { [weak self] in self?.settingsController.show() }
         statusItem.onCheckForUpdates = { [weak self] in
+            guard self?.diagnostics == nil else { return }
             // LSUIElement のアプリは非アクティブのままだと Sparkle のダイアログが背面に出る
             NSApp.activate(ignoringOtherApps: true)
             self?.updaterController.checkForUpdates(nil)
@@ -55,6 +65,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.windowManager.snapshot() ?? AppState()
         }
         restoreState()
+
+        // Exercise the signed production startup and controllers without touching
+        // real notes, preferences, login items, clipboard, TCC, or update servers.
+        if let diagnostics {
+            diagnostics.start(windowManager: windowManager, statusItem: statusItem,
+                              updater: updaterController.updater)
+            return
+        }
 
         DistributedNotificationCenter.default().addObserver(
             self,
@@ -110,6 +128,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         stateStore.flush()
         // SPEC §4: Quit は「閉じる」ではないのでクリップボードにコピーしない
         windowManager.closeAllWithoutCopying()
+        diagnostics?.cleanup()
     }
 
     /// メインメニュー（MainMenuBuilder）の「Ttemp について」から呼ばれる
