@@ -45,9 +45,9 @@ final class StateStore {
     private var retrySave: DispatchWorkItem?
     /// 未保存の変更のうち、いちばん古いものが積まれた時刻
     private var oldestPendingChangeUptime: TimeInterval?
-    /// 状態ファイルを読めなかったセッションでは孤児画像の掃除をしない。
-    /// 復元できなかっただけで、退避した state.json から手で拾える可能性を残すため（SPEC §10.4）。
+    /// 退避した状態が残る間は、再起動後も復旧用の画像を掃除しない（SPEC §10.4）。
     private var allowsImagePruning = true
+    private var hasCheckedRecoveryBackups = false
     /// 前回 prune 時に参照されていた画像ファイル名。参照・取り込み保護集合が変わらない限り
     /// ディレクトリ走査を繰り返さない（タイピング中の1秒ごとの保存で I/O しないため）。
     private var lastPrunedReferences: Set<String>?
@@ -84,6 +84,7 @@ final class StateStore {
     }
 
     private func loadSynchronously() -> LoadResult {
+        checkRecoveryBackupsIfNeeded()
         guard fileManager.fileExists(atPath: stateFileURL.path) else { return .empty }
 
         do {
@@ -137,6 +138,33 @@ final class StateStore {
         try fileManager.moveItem(at: stateFileURL, to: backup)
         NSLog("[Ttemp] 読めなかった state.json を退避した: \(backup.lastPathComponent)")
         return backup
+    }
+
+    /// Check once per store, on the serialized I/O queue, including when the
+    /// current state is absent or valid. An older quarantine can still reference
+    /// originals that are missing from the new state. Never guess on I/O failure.
+    private func checkRecoveryBackupsIfNeeded() {
+        guard !hasCheckedRecoveryBackups else { return }
+        hasCheckedRecoveryBackups = true
+        do {
+            let entries = try fileManager.contentsOfDirectory(at: directory,
+                                                               includingPropertiesForKeys: nil)
+            let prefixes = ["state.json.corrupt-", "state.json.invalid-", "state.json.version-"]
+            if entries.contains(where: { entry in
+                prefixes.contains(where: { entry.lastPathComponent.hasPrefix($0) })
+            }) {
+                allowsImagePruning = false
+            }
+        } catch {
+            let error = error as NSError
+            // A new installation has no directory yet. Other failures cannot
+            // establish that recovery backups are absent, so preserve images.
+            if error.domain != NSCocoaErrorDomain
+                || ![NSFileNoSuchFileError, NSFileReadNoSuchFileError].contains(error.code) {
+                allowsImagePruning = false
+                NSLog("[Ttemp] 復旧データを確認できないため画像の掃除を停止した: \(error.localizedDescription)")
+            }
+        }
     }
 
     // MARK: - 保存
@@ -203,6 +231,7 @@ final class StateStore {
     }
 
     private func saveSynchronously(_ state: AppState, completedImports: Set<String>) throws {
+        checkRecoveryBackupsIfNeeded()
         try Self.validate(state)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
         let encoder = JSONEncoder()
@@ -260,12 +289,14 @@ final class StateStore {
     /// 前セッションのクラッシュ残骸だけなので、参照・保護集合が同じ間はスキップできる
     /// （セッション最初の保存は `lastPrunedReferences == nil` で必ず走る）。
     private func pruneUnreferencedImages(keeping state: AppState, completedImports: Set<String>) {
-        guard allowsImagePruning else { return }
         let referenced = Set(state.notes.compactMap { note -> String? in
             guard case .image(let reference) = note.content else { return nil }
             return reference.fileName
         })
         pendingImageImports.whilePruning(releasing: completedImports.union(referenced)) { protected in
+            // Completed imports no longer need in-memory protection even when
+            // quarantined state prevents any deletion for this session.
+            guard allowsImagePruning else { return }
             pruneUnreferencedImages(referenced: referenced, protected: protected)
         }
     }
