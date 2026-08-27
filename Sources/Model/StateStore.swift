@@ -48,6 +48,8 @@ final class StateStore {
     /// 退避した状態が残る間は、再起動後も復旧用の画像を掃除しない（SPEC §10.4）。
     private var allowsImagePruning = true
     private var hasCheckedRecoveryBackups = false
+    /// An unreadable state must reach a backup before any new state replaces it.
+    private var pendingQuarantineReason: String?
     /// 前回 prune 時に参照されていた画像ファイル名。参照・取り込み保護集合が変わらない限り
     /// ディレクトリ走査を繰り返さない（タイピング中の1秒ごとの保存で I/O しないため）。
     private var lastPrunedReferences: Set<String>?
@@ -85,7 +87,6 @@ final class StateStore {
 
     private func loadSynchronously() -> LoadResult {
         checkRecoveryBackupsIfNeeded()
-        guard fileManager.fileExists(atPath: stateFileURL.path) else { return .empty }
 
         do {
             let keys: Set<URLResourceKey> = [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]
@@ -107,18 +108,35 @@ final class StateStore {
             let state = try JSONDecoder().decode(AppState.self, from: data)
             guard state.version == AppState.currentVersion else {
                 // 未知のバージョンは解釈できない。上書きせず退避する。
-                allowsImagePruning = false
-                return .recovered(backupURL: try quarantineStateFile(reason: "version-\(state.version)"))
+                return recoverStateFile(reason: "version-\(state.version)")
             }
             try Self.validate(state)
             return .loaded(state)
         } catch {
+            // fileExists also returns false for access failures. Only an actual
+            // missing-file error is an empty installation; preserve other failures.
+            if Self.isMissingFileError(error) { return .empty }
             NSLog("[Ttemp] state.json を読めなかった: \(error.localizedDescription)")
-            allowsImagePruning = false
             let reason = error is StateValidationError ? "invalid" : "corrupt"
-            if let backup = try? quarantineStateFile(reason: reason) {
-                return .recovered(backupURL: backup)
-            }
+            return recoverStateFile(reason: reason)
+        }
+    }
+
+    private static func isMissingFileError(_ error: Error) -> Bool {
+        let error = error as NSError
+        return error.domain == NSCocoaErrorDomain
+            && [NSFileNoSuchFileError, NSFileReadNoSuchFileError].contains(error.code)
+    }
+
+    private func recoverStateFile(reason: String) -> LoadResult {
+        allowsImagePruning = false
+        pendingQuarantineReason = reason
+        do {
+            let backup = try quarantineStateFile(reason: reason)
+            pendingQuarantineReason = nil
+            return .recovered(backupURL: backup)
+        } catch {
+            NSLog("[Ttemp] 状態を退避できないため元データを保持する: \(error.localizedDescription)")
             return .empty
         }
     }
@@ -156,11 +174,9 @@ final class StateStore {
                 allowsImagePruning = false
             }
         } catch {
-            let error = error as NSError
             // A new installation has no directory yet. Other failures cannot
             // establish that recovery backups are absent, so preserve images.
-            if error.domain != NSCocoaErrorDomain
-                || ![NSFileNoSuchFileError, NSFileReadNoSuchFileError].contains(error.code) {
+            if !Self.isMissingFileError(error) {
                 allowsImagePruning = false
                 NSLog("[Ttemp] 復旧データを確認できないため画像の掃除を停止した: \(error.localizedDescription)")
             }
@@ -239,6 +255,18 @@ final class StateStore {
         let data = try encoder.encode(state)
         guard data.count <= Self.maximumStateFileByteCount else {
             throw StateValidationError.fileTooLarge
+        }
+        if let reason = pendingQuarantineReason {
+            // A temporary permission/disk failure during load must not turn the
+            // next successful write into irreversible loss of the original.
+            // Retry the backup first; normal save retry handles continued failure.
+            do {
+                _ = try quarantineStateFile(reason: reason)
+            } catch {
+                guard Self.isMissingFileError(error) else { throw error }
+                // The original may have been moved away for manual recovery.
+            }
+            pendingQuarantineReason = nil
         }
         // SPEC §10.4: アトミック書き込み（一時ファイルに書いてから rename）
         try data.write(to: stateFileURL, options: .atomic)

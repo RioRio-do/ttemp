@@ -16,6 +16,21 @@ private final class RecoveryListingDeniedFileManager: FileManager, @unchecked Se
     }
 }
 
+private final class RecoveryMoveDeniedFileManager: FileManager, @unchecked Sendable {
+    var deniesRecoveryMove = true
+
+    override func moveItem(at srcURL: URL, to dstURL: URL) throws {
+        if deniesRecoveryMove, srcURL.lastPathComponent == "state.json" {
+            throw CocoaError(.fileWriteNoPermission)
+        }
+        try super.moveItem(at: srcURL, to: dstURL)
+    }
+}
+
+private final class UnavailableExistenceFileManager: FileManager, @unchecked Sendable {
+    override func fileExists(atPath path: String) -> Bool { false }
+}
+
 /// SPEC §10 の永続化のテスト。
 final class StateStoreTests: XCTestCase {
     private var directory: URL!
@@ -112,6 +127,13 @@ final class StateStoreTests: XCTestCase {
 
     func test_ファイルがなければemptyを返す() {
         XCTAssertEqual(store.load(), .empty)
+    }
+
+    func test_fileExistsのfalseだけで保存済み状態を空と判断しない() throws {
+        let saved = AppState(notes: [makeNote()])
+        try store.save(saved)
+        let uncertain = StateStore(directory: store.directory, fileManager: UnavailableExistenceFileManager())
+        XCTAssertEqual(uncertain.load(), .loaded(saved))
     }
 
     func test_壊れたファイルは退避され空で起動する() throws {
@@ -511,6 +533,42 @@ final class StateStoreTests: XCTestCase {
                                  fileManager: RecoveryListingDeniedFileManager(blockedDirectory: store.directory))
         try guarded.save(AppState())
         XCTAssertNotNil(images.load(reference))
+    }
+
+    func test_状態の退避失敗時は上書きせず次の保存で退避を再試行する() throws {
+        try FileManager.default.createDirectory(at: store.directory, withIntermediateDirectories: true)
+        let original = Data("{ damaged but potentially recoverable".utf8)
+        try original.write(to: store.stateFileURL)
+        let files = RecoveryMoveDeniedFileManager()
+        let guarded = StateStore(directory: store.directory, fileManager: files)
+        XCTAssertEqual(guarded.load(), .empty)
+        let replacement = AppState(notes: [makeNote(text: "new note")])
+        XCTAssertThrowsError(try guarded.save(replacement))
+        XCTAssertEqual(try Data(contentsOf: store.stateFileURL), original)
+
+        files.deniesRecoveryMove = false
+        try guarded.save(replacement)
+        XCTAssertEqual(guarded.load(), .loaded(replacement))
+        let backups = try FileManager.default.contentsOfDirectory(at: store.directory,
+                                                                  includingPropertiesForKeys: nil)
+            .filter { $0.lastPathComponent.hasPrefix("state.json.corrupt-") }
+        XCTAssertEqual(backups.count, 1)
+        XCTAssertEqual(try Data(contentsOf: XCTUnwrap(backups.first)), original)
+    }
+
+    func test_退避失敗後に元データを手動退避しても保存を再開できる() throws {
+        try FileManager.default.createDirectory(at: store.directory, withIntermediateDirectories: true)
+        let original = Data("{ recover manually".utf8)
+        try original.write(to: store.stateFileURL)
+        let files = RecoveryMoveDeniedFileManager()
+        let guarded = StateStore(directory: store.directory, fileManager: files)
+        XCTAssertEqual(guarded.load(), .empty)
+        let manualBackup = store.directory.appendingPathComponent("state.json.corrupt-manual")
+        try FileManager.default.moveItem(at: store.stateFileURL, to: manualBackup)
+        files.deniesRecoveryMove = false
+        try guarded.save(AppState())
+        XCTAssertEqual(try Data(contentsOf: manualBackup), original)
+        XCTAssertEqual(guarded.load(), .loaded(AppState()))
     }
 
     func test_孤児掃除は無関係なファイルやディレクトリを消さない() throws {

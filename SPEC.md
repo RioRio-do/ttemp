@@ -337,7 +337,7 @@ stateはsymbolic linkではないregular file、64 MiB以下、32ノート以下
 ### 10.4 破損・未知バージョン・孤児画像
 
 - 読み取り不能な `state.json` は `state.json.corrupt-YYYYMMDD-HHmmss[-N]`、上限・構造違反は`state.json.invalid-YYYYMMDD-HHmmss[-N]`、未知 version は `state.json.version-<version>-YYYYMMDD-HHmmss[-N]` へ rename し、空の表示状態で起動する。state本文は上限+1 byteだけをbounded readし、file sizeの競合で無制限に確保しない。
-- quarantine できない場合も crash せず空で起動する。
+- quarantine できない場合も crash せず空で起動するが、元のstateを上書きしない。次の保存では先に退避を再試行し、失敗中は保存も失敗として通常のretryへ戻す。退避成功または元ファイルが手動退避等で既に存在しないと確認できた場合にだけ、新しいstateを書き込む。
 - state を読めなかったセッション、および`state.json.corrupt-` / `invalid-` / `version-`の退避entryが残るセッションでは画像 prune を禁止する。再起動後の現行stateが正常・未作成でも、退避stateからの復旧用画像を保持する。退避entryの確認はstoreごとにI/O queueで一度だけ行い、directory未作成以外の確認失敗時も削除しない。復旧後に退避stateを別の場所へ保管する等して取り除き、次回起動すると通常の掃除を再開する。
 - pruneを停止していても、保存済み画像の取り込み保護情報は保存成功後に解放し、同一セッションで蓄積し続けない。
 - 画像取り込みは原本書込前に共有registryへ登録し、GCの走査・削除とlockで直列化する。main threadでwindowへ取り込んだ後、その時点以降のsnapshotが保存に成功するまで原本を保護する。古いqueued snapshotや保存失敗で解除しない。取り込みをキャンセルした原本は即回収し、初回保存前にclose・置換された原本も次の正常保存で保護を解除する。
