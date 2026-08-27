@@ -48,6 +48,8 @@ elif ! security find-identity -v -p codesigning ${TTEMP_KEYCHAIN:+"$TTEMP_KEYCHA
     exit 1
 fi
 
+VERIFY_MODE=$(python3 scripts/diagnostic-launch.py distribution-mode)
+
 echo "==> プロジェクト生成とビルド"
 xcodegen generate
 XCODE_ARGS=(
@@ -65,7 +67,8 @@ APP="build/DerivedData/Build/Products/Release/Ttemp.app"
 
 echo "==> helperを含む安定署名とlibrary constraint"
 TTEMP_SIGN_IDENTITY="$IDENTITY" ./scripts/sign-app.sh "$APP"
-./scripts/verify-app.sh "$APP"
+test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")" = com.am921.ttemp
+./scripts/verify-app.sh "$VERIFY_MODE" "$APP"
 
 echo "==> dist/ へ配置"
 mkdir -p dist
@@ -75,7 +78,7 @@ NOTES_PATH="dist/release-notes-v$VERSION.md"
 cp "$WORK_DIR/release-notes.md" "$NOTES_PATH"
 ditto -c -k --keepParent dist/Ttemp.app dist/Ttemp.zip
 ditto -x -k dist/Ttemp.zip "$WORK_DIR/unpacked"
-./scripts/verify-app.sh "$WORK_DIR/unpacked/Ttemp.app"
+./scripts/verify-app.sh "$VERIFY_MODE" "$WORK_DIR/unpacked/Ttemp.app"
 
 APP_VERSION=$(defaults read "$PWD/dist/Ttemp.app/Contents/Info" CFBundleShortVersionString)
 APP_BUILD=$(defaults read "$PWD/dist/Ttemp.app/Contents/Info" CFBundleVersion)
@@ -157,4 +160,8 @@ xcrun swift -module-cache-path build/verification-module-cache \
 
 echo "完了: dist/Ttemp.dmg + dist/Ttemp.zip + dist/appcast.xml + dist/SHA256SUMS (Ttemp $VERSION, build $BUILD, identity: $IDENTITY)"
 echo "リリースノート: $NOTES_PATH"
-echo "手動でリリースする場合: gh release create \"v$VERSION\" dist/Ttemp.dmg dist/Ttemp.zip dist/appcast.xml dist/SHA256SUMS --target \"$SOURCE_REVISION\" --title \"Ttemp $VERSION\" --notes-file \"$NOTES_PATH\""
+if [ "$VERIFY_MODE" = --static-only ]; then
+    echo '実起動と画面表示は未確認です。公開は本番appの実起動を検証するCIで行ってください。'
+else
+    echo "手動でリリースする場合: gh release create \"v$VERSION\" dist/Ttemp.dmg dist/Ttemp.zip dist/appcast.xml dist/SHA256SUMS --target \"$SOURCE_REVISION\" --title \"Ttemp $VERSION\" --notes-file \"$NOTES_PATH\""
+fi

@@ -57,7 +57,7 @@ main へ push すると:
 4. 使い捨てのユーザーキーチェーンへ証明書を取り込み、user/System trust store を
    変更せず証明書 fingerprint を直接指定して安定署名し、EdDSA 署名つきZIPと
    appcast.xml、初回インストール用DMGを生成。Universal appと各helperの署名・実起動、DMGのchecksum・
-   内部構造、ZIP展開後・DMG内appの実起動、app内の公開鍵によるZIP/appcast署名とversion・length・URLを公開前に再検証
+   内部構造、ZIP展開後・DMG内appの実起動、app内の公開鍵によるZIP/appcast署名とversion・length・URLを公開前に再検証。本番IDの実起動は明示的に許可したGitHub-hosted CIだけで行う
 5. built commitと同じSHAを`--target`へ明示して`vX.Y.N`のGitHub Releaseを作成し、
    `Ttemp.dmg`、`Ttemp.zip`、`appcast.xml`、`SHA256SUMS`を添付。
    本文は`dist/release-notes-vX.Y.N.md`を`--notes-file`で掲載する。GitHubの自動生成ノートは使わない
@@ -143,19 +143,50 @@ AOT binaryは本体の制約に一致しないため、翻訳実行はサポー�
 ./scripts/test-release.sh
 ```
 
-使い捨て証明書とkeychainでUniversal Releaseを署名し、実起動・ZIP往復・不正libraryの
+使い捨て証明書・keychainと`com.am921.ttemp.runtime-test.<UUID>`でUniversal Releaseを
+`build/RuntimeTests`へ作成し、実起動・ZIP往復・不正libraryの
 拒否を確認する。さらにローカルfeedと専用bundle IDのコピーに対し、Sparkleのhelperによる
 更新と更新後の実起動、不正なfeed/archiveの拒否を検証する。本番鍵も公開サーバーも使わない。
 keychainの検索リストは終了時に元へ戻す。GUIセッションのあるMacで実行する。
 
 `verify-app.sh`は本体・helperの署名とarchitecture、entitlementsを検査し、45秒以内の
-`--self-test`成功を必須にする。データは一時directory・専用defaults・専用pasteboardへ隔離し、
-入力監視の要求、login登録、通常の更新チェックは行わない。
-`--isolated`は手動UI確認用の空メモを開く。正常終了時に診断データを破棄する。
+`--self-test`成功を必須にする。スクリプトとアプリ入口の両方でIDを確認し、ローカルでは
+開発・検証IDだけを起動する。データは一時directory・専用defaults・専用pasteboardへ隔離し、
+入力監視の要求、login登録、通常の更新チェックは行わない。既存のmacOS表示設定は変更しない。
+`test-release.sh`は診断引数なし・競合モード・不正なCIオプション等の4ケースも、
+使い捨てIDの実バイナリで各5秒以内に拒否されることを確認する。
+
+本番IDはデータの隔離だけでは安全に検証できない。macOSが実行元アプリへstatus itemを
+紐づけ、その実行元が非表示だと本番のアイコンまで隠す場合がある。**本番appをローカルの
+`--self-test`や`--isolated`で起動しない**。古いバイナリも新しい検証スクリプトのガード対象となる。
+静的検証だけなら`./scripts/verify-app.sh --static-only /Applications/Ttemp.app`を使う。
+
+配布用CIの実起動は`TTEMP_DISPOSABLE_CI=1`に加え、GitHub標準の`GITHUB_ACTIONS=true`・
+`RUNNER_ENVIRONMENT=github-hosted`・`RUNNER_OS=macOS`をすべて要求し、アプリへ
+`--disposable-ci`を渡す。self-hostedや単なる`CI=true`は許可しない。これは誤操作防止であり、
+環境変数は認証情報ではない。ローカルで変数を偽装して回避しない。
+
+自動テストはstatus itemの構成だけを調べ、`TTEMP_STATUS_ITEM_VISIBILITY_UNVERIFIED`を
+出力する。`isVisible`がtrueでも実際には隠れることがあるため、runtime成功を実表示の保証とは
+扱わない（[Appleの説明](https://developer.apple.com/documentation/appkit/nsstatusitem/isvisible)）。
+
+手動確認はDebugの専用IDで行う。次は署名済みDebug buildがある場合の例。
+
+```bash
+build/DerivedData/Build/Products/Debug/Ttemp.app/Contents/MacOS/Ttemp --isolated
+```
+
+アイコンが実際に見えること、左クリックで前面化すること、右クリックでメニューが開くこと、
+最後のメモを閉じてもアイコンが残ることを確認する。右クリック後はメニューを閉じる。
+左右のmouse-up処理を受信すると`TTEMP_STATUS_ITEM_INTERACTION_OK`を1回出力するが、
+これは操作の受信記録であり画像の正しさまでは保証しない。テスト側がOSで非表示なら未確認とし、
+OS設定を自動変更して通過させない。最後はメニューの「終了」で診断データを破棄する。
 
 本番鍵のある環境では、上の手順で確認したtagを`TTEMP_PREVIOUS_RELEASE`へ渡す。
 `TTEMP_PREVIOUS_RELEASE="$PREVIOUS_TAG" ./scripts/build-release.sh`も生成は`dist/`までであり、
 pushやRelease公開はしない。ローカルでもCIと同じ採番・ノート検証を行う。
+本番app・展開ZIP・DMG内appは静的検証だけとし、実起動は行わない。
+本番の署名済み配布物そのものの実起動は、公開前のCIで必ず確認する。
 `setup-release-keys.sh`はGitHub secretsを書き換えるため、検証目的では実行しない。
 
 ## なぜ ad-hoc 署名ではだめか（安定署名の理由）
@@ -166,7 +197,9 @@ designated requirement が安定し、更新をまたいで許可が引き継が
 自己署名の場合の同一性判定は**証明書そのもの**に紐づくので、
 証明書を作り直すと一度だけ再許可が必要になる。
 
-開発ビルド（Xcode / xcodebuild の Debug）は ad-hoc のまま。ローカルの
+開発ビルド（Xcode / xcodebuild の Debug）はad-hoc署名、専用ID`com.am921.ttemp.development`、
+保存先`Application Support/Ttemp Development`を使い、本番のメモ・設定・前面化通知を共有しない。
+配布用updaterは起動しない。ローカルの
 開発ビルドでも安定署名したければ、project.yml の `CODE_SIGN_IDENTITY` を
 `"Ttemp Signing"` にする（setup-release-keys.sh 実行後なら identity がある）。
 
@@ -187,9 +220,10 @@ security add-trusted-cert -p codeSign -k ~/Library/Keychains/login.keychain-db /
 <Sparkleのbin>/generate_keys -f signing/sparkle-ed-private-key
 ```
 
-手動リリースも、最新の公開済みtagを確認して
+ローカルで配布物を組み立てる場合も、最新の公開済みtagを確認して
 `TTEMP_PREVIOUS_RELEASE="$PREVIOUS_TAG" ./scripts/build-release.sh`を実行する。
-表示される`gh release create … --notes-file …`は実際に公開するcommandなので、公開の承認後にだけ実行する。
+ローカルの静的検証だけでは公開せず、本番appの実起動を確認するCIで公開する。
+`gh release create … --notes-file …`の案内は、実起動検証を通したCI環境だけで出力する。
 
 ## 受け取り側の注意（初回のみ）
 

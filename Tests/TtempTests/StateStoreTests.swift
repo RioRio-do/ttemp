@@ -69,6 +69,14 @@ final class StateStoreTests: XCTestCase {
 
     // MARK: - シリアライズ / デシリアライズ
 
+    func testDefaultDirectoryKeepsDevelopmentNotesSeparate() {
+#if DEBUG
+        XCTAssertEqual(StateStore.defaultDirectory.lastPathComponent, "Ttemp Development")
+#else
+        XCTAssertEqual(StateStore.defaultDirectory.lastPathComponent, "Ttemp")
+#endif
+    }
+
     func test_保存した状態をそのまま読み戻せる() throws {
         let state = AppState(notes: [
             makeNote(text: "一枚目\nタブ\tと絵文字🍣", isPinned: true, offset: 3),

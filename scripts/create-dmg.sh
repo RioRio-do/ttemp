@@ -9,6 +9,7 @@ if [ "$#" -ne 2 ]; then
 fi
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+VERIFY_MODE=$(python3 "$SCRIPT_DIR/diagnostic-launch.py" distribution-mode)
 APP_INPUT=$1
 OUTPUT_INPUT=$2
 
@@ -145,7 +146,7 @@ test -f "$VERIFY_MOUNT/.background/background.png"
 test -f "$VERIFY_MOUNT/.DS_Store"
 test ! -e "$VERIFY_MOUNT/.fseventsd"
 test ! -e "$VERIFY_MOUNT/.Spotlight-V100"
-"$SCRIPT_DIR/verify-app.sh" "$VERIFY_MOUNT/Ttemp.app"
+"$SCRIPT_DIR/verify-app.sh" "$VERIFY_MODE" "$VERIFY_MOUNT/Ttemp.app"
 
 detach_dmg "$MOUNTED_DEVICE"
 MOUNTED_DEVICE=

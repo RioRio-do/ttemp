@@ -7,3 +7,5 @@
 - Before finishing, run `python3 scripts/release-notes.py check` and `python3 -B -m unittest discover -s Tests/ReleaseNotes -v`. For a release, also render notes from the final committed source using the actual previous published tag; see `docs/SIGNING.md`.
 - Keep the current `major.minor.<commit count>` numbering unless the user requests a policy change. Repository publication alone is not a reason to move to 1.x.
 - Do not push, publish a Release, or replace an installed app without the user's authorization. Use disposable keys for release tests; never run `scripts/setup-release-keys.sh` merely to validate a build.
+- Never launch the production bundle ID for local diagnostics, including older apps. Use `scripts/test-release.sh` or Debug's dedicated ID with `--isolated`; use `verify-app.sh --static-only` for production artifacts locally. Do not simulate hosted-CI environment variables to bypass this guard.
+- Runtime/configuration checks do not prove menu-bar visibility. Report actual visibility and left/right click checks separately; never change ControlCenter preferences to make a test pass.

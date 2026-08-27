@@ -1,11 +1,25 @@
 #!/bin/bash
-# Static integrity is not enough: launch the exact signed executable, with a deadline.
+# Static integrity and bounded runtime verification are distinct checks.
 set -euo pipefail
+STATIC_ONLY=false
+if [ "${1:-}" = --static-only ]; then
+    STATIC_ONLY=true
+    shift
+elif [ "${1:-}" = --runtime ]; then
+    shift
+fi
 if [ "$#" -ne 1 ] || [ ! -x "$1/Contents/MacOS/Ttemp" ]; then
-    echo "usage: $0 Ttemp.app" >&2
+    echo "usage: $0 [--runtime|--static-only] Ttemp.app" >&2
     exit 64
 fi
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 APP=$(cd "$1" && pwd)
+RUNTIME_ARGS=(--self-test)
+if [ "$STATIC_ONLY" = false ]; then
+    # Check before codesigning probes or launching even an older, unguarded app.
+    CI_ARGUMENT=$(python3 "$SCRIPT_DIR/diagnostic-launch.py" runtime "$APP")
+    [ -z "$CI_ARGUMENT" ] || RUNTIME_ARGS+=("$CI_ARGUMENT")
+fi
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/ttemp-verify.XXXXXX")
 APP_PID=
 WATCHDOG_PID=
@@ -38,13 +52,17 @@ done
 codesign -d --entitlements - --xml "$APP" > "$WORK_DIR/entitlements.plist" 2>/dev/null
 test "$(xmllint --xpath 'count(/plist/dict/key)' "$WORK_DIR/entitlements.plist")" = 1
 test "$(/usr/libexec/PlistBuddy -c 'Print :com.apple.security.cs.disable-library-validation' "$WORK_DIR/entitlements.plist")" = true
+if [ "$STATIC_ONLY" = true ]; then
+    echo 'TTEMP_STATIC_VERIFICATION_OK (runtime and screen visibility not checked)'
+    exit 0
+fi
 
 # Compile a valid non-platform library. dlopen must reject it specifically because
 # of the distribution library constraint, not because it is missing or malformed.
 printf '%s\n' 'int ttemp_probe(void) { return 42; }' > "$WORK_DIR/probe.c"
 xcrun clang -dynamiclib "$WORK_DIR/probe.c" -o "$WORK_DIR/probe.dylib"
 codesign --force --sign - "$WORK_DIR/probe.dylib"
-"$APP/Contents/MacOS/Ttemp" --self-test --probe-library "$WORK_DIR/probe.dylib" > "$WORK_DIR/run.log" 2>&1 &
+"$APP/Contents/MacOS/Ttemp" "${RUNTIME_ARGS[@]}" --probe-library "$WORK_DIR/probe.dylib" > "$WORK_DIR/run.log" 2>&1 &
 APP_PID=$!
 (
     for ((i=0; i<45; i++)); do
@@ -63,3 +81,4 @@ else
 fi
 cat "$WORK_DIR/run.log"
 grep -q '^TTEMP_SELF_TEST_OK ' "$WORK_DIR/run.log"
+grep -q '^TTEMP_STATUS_ITEM_VISIBILITY_UNVERIFIED$' "$WORK_DIR/run.log"

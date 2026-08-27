@@ -19,14 +19,14 @@ Ttemp は macOS 14 以降で動く、メニューバー常駐型の一時メモ�
 ### 1.1 常駐方式
 
 - `LSUIElement = true` と `.accessory` activation policy を使用し、Dock アイコンを出さない。
-- メニューバー項目はプロセスの生存中、常に利用できる。
+- メニューバー項目はプロセスの生存中保持し、表示を要求する。実際の表示はmacOSの表示許可・領域制限にも依存し、内部の構成チェックだけで画面上の可視性を保証しない。アプリからOSの表示設定を書き換えない。
 - 最後のウィンドウを閉じても終了しない。
 - `⌘Q` は割り当てない。終了はステータスメニューの `終了 / Quit` から行う。
 - 終了時はウィンドウを閉じる前に状態を同期保存し、内容をクリップボードへコピーしない。
 
 ### 1.2 単一インスタンス
 
-同じ Bundle ID のプロセスが既に存在するとき、後発プロセスは分散通知 `com.am921.ttemp.bringAllToFront` を送り、既存プロセスへ全ウィンドウの前面化を依頼して終了する。
+同じ Bundle ID のプロセスが既に存在するとき、後発プロセスは分散通知 `<Bundle ID>.bringAllToFront` を送り、既存プロセスへ全ウィンドウの前面化を依頼して終了する。本番では従来どおり`com.am921.ttemp.bringAllToFront`とし、開発版と通知を共有しない。
 
 ほぼ同時の起動でも双方が終了してはならない。候補全体から、取得できる場合は最古の起動日時、同値または取得不能なら最小 PID を勝者として全プロセスが同じ判断をする。敗者は Sparkle updater やステータス項目を初期化しない。
 
@@ -285,7 +285,7 @@ LSUIElement でも responder chain の標準キー操作を成立させるため
 
 ### 10.1 保存タイミングと I/O
 
-- ルートは user Application Support の `Ttemp`、状態は `state.json`、画像は `Images/`。
+- ルートは user Application Support の `Ttemp`、状態は `state.json`、画像は `Images/`。Debug版の既定ルートは`Ttemp Development`とし、本番メモを読み書きしない。明示的な診断モードは§13.3の一時directoryを使う。
 - 本文、画像、pin、font offset、移動、resize、close による状態変更を保存対象にする。
 - 空のテキストウィンドウと、閉じることが確定してフェード中のウィンドウはsnapshotから除外する。
 - 連続変更は1秒 debounce する。ただし最初の未保存変更から単調時計で最大5秒以内に必ず保存を開始する。
@@ -390,7 +390,7 @@ Input Monitoring は §2 の listen-only key/mouse event 検出だけに使う�
 
 - Swift 5、AppKit、macOS deployment target 14.0。
 - project generator は XcodeGen、定義は `project.yml`。生成物 `Ttemp.xcodeproj` は source of truth ではない。
-- Product name `Ttemp`、Bundle ID `com.am921.ttemp`、marketing version `0.1.0`、build version `1`。development languageは`en`、`CFBundleLocalizations`は`en`と`ja`。
+- Product name `Ttemp`、配布Bundle ID `com.am921.ttemp`、Debug Bundle ID `com.am921.ttemp.development`、marketing version `0.1.0`、build version `1`。development languageは`en`、`CFBundleLocalizations`は`en`と`ja`。配布版のID・署名identity・保存先は変更しない。
 - Swift compiler warningはDebug/Releaseともerrorとして扱う。
 - App Sandbox は無効。Hardened Runtime は有効。現行配布は ad-hoc/self signing を前提とする。
 - 自己署名にはApple Team IDがないため、本体に限り`com.apple.security.cs.disable-library-validation`を付与する。配布署名では必ず、同梱Sparkleの各architectureのCDHashだけを許すmacOS 14+のlibrary constraintを同時に付ける。OS libraryはOS側で除外される。それ以外の第三者libraryの読込を許してはならない。
@@ -406,7 +406,7 @@ Input Monitoring は §2 の listen-only key/mouse event 検出だけに使う�
 - EdDSA public key は `XQCyVcCJKpfIsIS9umCNonEODMKebjLmi+3ZhntQkS4=`。秘密鍵を repository、build log、artifact に含めない。
 - automatic checks と automatic update を有効にする。
 - `SURequireSignedFeed`と`SUVerifyUpdateBeforeExtraction`を有効にし、appcast自体のEdDSA署名とarchive署名を展開前に必須とする。
-- updater は単一インスタンス確認後にだけ開始する。manual check 前に app を activate し、dialog が背面に出ないようにする。
+- updater は本番Bundle IDの通常起動で、単一インスタンス確認後にだけ開始する。開発・診断版では開始しない。manual check 前に app を activate し、dialog が背面に出ないようにする。
 - repository link は `https://github.com/RioRio-do/ttemp`。About panel と status menu から開ける。
 - 通常のノート機能は network を必要としない。network access は Sparkle update check/download と、ユーザーが明示した GitHub page open に限る。
 
@@ -417,6 +417,7 @@ Input Monitoring は §2 の listen-only key/mouse event 検出だけに使う�
 - DMGは660×400 pointのFinder icon viewとし、背景の文字は`Ttemp`だけ、中央に右向き矢印を置く。左に`Ttemp.app`、右に`/Applications`を指す`Applications` symlinkを置き、言語依存の注釈は表示しない。
 - DMG生成時は一時HFS+ imageのFinder設定を保存してからUDZOへ圧縮する。checksum、`Ttemp.app`、Applications symlink、背景、`.DS_Store`、内部appのcode signatureと実起動を公開前に検証し、作業中に作られる`.fseventsd`やSpotlight管理情報を配布物へ含めない。
 - ZIPはSparkle enclosure専用とし、appcastはDMGではなく`Ttemp.zip`を参照する。ZIP展開後のappも実起動検証する。`scripts/verify-update.swift`はappの`SUPublicEDKey`でZIPとappcastのEdDSA署名を独立検証し、署名必須設定、version/build、archive length、canonical download URLも照合する。
+- 本番app・展開ZIP・DMG内appの実起動は、§13.3の明示的に許可されたGitHub-hosted CIでだけ実施する。ローカルの`build-release.sh`と`create-dmg.sh`は署名等の静的検証のみ行い、本番appを起動しない。静的検証をruntime/UI検証の成功とは扱わず、公開前のCI実起動ゲートを維持する。ローカルでは実起動未確認とCIで公開する旨を表示し、手動公開commandを案内しない。配布ビルドは出力Bundle IDが本番IDと一致しなければ停止する。
 - GitHub Releaseには`Ttemp.dmg`、`Ttemp.zip`、`appcast.xml`、`SHA256SUMS`を添付し、READMEではDMGを通常ユーザー向けのダウンロードとして案内する。checksumは破損・取り違え検出用で、publisherの独立認証とは表現しない。
 - リリースノートは`release-notes/<lowercase-slug>.md`に保存する。`## 日本語`、`## English`の順に、各言語1〜5個の対応する1行bulletを記す。ユーザーに関係する変更と必要な操作だけを簡潔に書く。`AGENTS.md`に毎回の執筆・確認を作業条件として明記する。
 - `scripts/release-notes.py`は日英section・項目数・UTF-8・8KiB上限・空項目・TODO等を検証する。HTMLと制御文字を許可しない。意味の一致と変更の網羅性は執筆者が実装差分と照合する。
@@ -450,6 +451,7 @@ unit test は App host を起動せず、次の純粋ロジックと永続化境
 - state round-trip、debounce/max-delay、monotonic clock、retry、byte/note/text/ID上限、quarantine、extension normalization/path traversal 防止、managed-file 限定 prune、非同期画像取り込みと保存・削除の競合。
 - 日本語/英語選択と pin-mode migration。
 - Applications配下判定のdirect/nested path、DMG path、類似prefix、境界値。
+- 診断のID・CI環境・明示オプションの許否、手動クリック確認の左右両操作・重複・非mouseイベント除外、Debug保存先の本番分離。
 
 ### 13.2 CI の最低ゲート
 
@@ -458,24 +460,30 @@ CI は少なくとも次を行う。
 1. 固定versionとSHA-256を検証したXcodeGenでprojectを生成し、Sparkleの固定revisionを解決する。
 2. code signing を無効化した Debug app build を明示的に成功させる。
 3. `TtempTests` を実行して全 test を成功させる。
-4. PRでも使い捨て自己署名証明書でUniversal Releaseを生成し、`scripts/test-release.sh`で実起動、ZIP往復、第三者library拒否、制約を外した負例、署名検証器の負例とローカルSparkle更新を検証する。本番秘密鍵は使わない。更新fixtureはloopbackのみで配信し、ログの文面ではなく起動通知を最大30秒待つ。
+4. PRでも使い捨て自己署名証明書と`com.am921.ttemp.runtime-test.<UUID>`でUniversal Releaseを`build/RuntimeTests`へ生成し、`scripts/test-release.sh`で実起動、ZIP往復、第三者library拒否、制約を外した負例、署名検証器の負例とローカルSparkle更新を検証する。本番秘密鍵・本番Bundle IDは使わない。更新fixtureはloopbackのみで配信し、ログの文面ではなく起動通知を最大30秒待つ。
 5. 1〜4はmacOS 15 arm64 / Intel、macOS 26 arm64で行い、全成功を固定名`ビルドとテスト`で集約する。branch protectionのrequired context名を変更しない。
 6. Release workflowでは本番identityで再ビルドし、DMG/ZIP/appcastの存在・構造・署名情報と最終artifactの実起動を検証する。
-7. 日英リリースノートの形式と、生成・欠落・誤version・公開済みノート改変・再利用防止・merge時の採番、更新fixtureのDNS非依存の起動通知を独立jobで検証する。このjobも`ビルドとテスト`の成功条件に含める。公開jobでは最新の公開済みReleaseに対するノート生成を必須とする。
+7. 日英リリースノートの形式と、生成・欠落・誤version・公開済みノート改変・再利用防止・merge時の採番、更新fixtureのDNS非依存の起動通知、診断スクリプトの起動前拒否を独立jobで検証する。このjobも`ビルドとテスト`の成功条件に含める。公開jobでは最新の公開済みReleaseに対するノート生成を必須とする。
 
 ### 13.3 配布版の隔離診断
 
+- ローカルの`--self-test`/`--isolated`は開発ID、`com.am921.ttemp.runtime-test.<UUID>`、`com.am921.ttemp.update-test.<UUID>`だけを許可する。UUIDは標準のhyphen付き形式とし、不明・欠落・prefixだけのIDを拒否する。テストIDのappを診断引数なしで通常起動しない。Debug版は通常起動も可能とする。
+- 本番IDの`--self-test`だけは`--disposable-ci`と、`TTEMP_DISPOSABLE_CI=1`・`GITHUB_ACTIONS=true`・`RUNNER_ENVIRONMENT=github-hosted`・`RUNNER_OS=macOS`の全一致を条件に許可する。本番IDの`--isolated`、self-hosted CI、単なる`CI=true`は拒否する。これは誤操作防止であり環境変数の真正性を保証するsecurity boundaryではない。ローカルでCI変数を偽装して回避しない。
+- アプリ入口は`NSApplication`・診断データ・status itemの作成前に起動方針を確認する。`verify-app.sh`も独立に起動前チェックし、旧バイナリを含め本番IDのローカル実行を止める。`--static-only`は署名・architecture・entitlementsだけを検査し、runtime未確認を明記する。既にmacOSへ記録された表示設定は修復・削除しない。
+- `test-release.sh`は使い捨てIDの実バイナリで、診断引数なし、競合モード、不正なCIオプション、interactiveでのlibrary probeを各5秒以内に拒否することも確認する。この拒否テスト自体も本番・開発IDでは実行しない。
 - 本体の`--self-test`は一意な一時state directory、専用UserDefaults suite、専用copy/paste用pasteboardを使う。既存メモ、一般クリップボード、ログイン項目を変更せず、TCC要求・event tap・ネットワーク更新を開始しない。
 - 明示的な診断モードに限りApplications制約と単一インスタンス制約を外し、通常のcontrollerでstatus item、日英メニュー、テキスト入力・paste・undo/redo・上限、文字サイズ・pin、画像import、状態保存復元、close時copy、最後のwindow後の常駐を検証する。成功markerと終了codeを両方要求し、外部watchdogを45秒にする。
 - 診断の直接呼び出しは入力イベントではないため、テキスト操作ごとのUndo境界を明示し、検証後は通常のイベント単位設定へ戻す。固定時間のsleepで操作を分離しない。
+- 自動診断のstatus item検査は表示要求・画像・target・actionの構成チェックであり、OSによる実表示の検査ではない。`TTEMP_STATUS_ITEM_VISIBILITY_UNVERIFIED`を出力し、runtime成功markerとは区別する。署名済み実起動テストでも画面確認済みと報告しない。
 - `--probe-library PATH`は`--self-test`専用。実在する署名済み第三者dylibがOSのlibrary constraintで拒否されることを確認する。
-- `--isolated`は同じ隔離データで手動UI確認用の空メモを開く。通常のmain menuと言語変更経路を使い、login設定は専用defaults内だけで模擬する。正常終了時に診断データを破棄する。
+- `--isolated`は同じ隔離データで手動UI確認用の空メモを開く。通常のmain menuと言語変更経路を使い、login設定は専用defaults内だけで模擬する。アイコンへの左・右mouse-upの通常処理が両方完了したときだけ`TTEMP_STATUS_ITEM_INTERACTION_OK`を1回出力する。nil・keyboard・他mouseイベントや同じ側の繰り返しでは完了しない。このmarkerは操作の受信記録であり、画像の正しさの保証ではない。正常終了時に診断データを破棄する。
 - `scripts/test-update.sh`は同じ固定revisionのSparkle CLIをbuildし、一意なbundle IDのappコピーと使い捨てEdDSA鍵、127.0.0.1だけのfeedで署名不正の拒否・helperによる更新・更新後の実起動を確認する。実アプリと公開feedは変更しない。
 
 ### 13.4 手動確認
 
 OS/TCC/AppKit UI 依存で unit test 化しにくい項目は release 前に実機確認する。
 
+- メニューバーにアイコンが実際に見えること、左クリックの前面化、右クリックのメニュー表示、最後のメモを閉じた後の表示。§13.3の内部チェックと混同しない。非表示の場合はOSの表示許可・親アプリへの登録・空き領域も切り分け、テストのためにOS設定を自動改変しない。
 - 初回 onboarding → TCC、拒否、後日許可、即時 tap 開始、剥奪。
 - 左右 Shift の物理キー、JIS/US配列、Caps Lock、mouse混在。
 - 複数 display/Spaces、focus handoff、pin、空 windowの自動消滅。

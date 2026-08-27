@@ -3,7 +3,8 @@ import Sparkle
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     /// SPEC §1: 2つ目のインスタンスは既存インスタンスに「全ウィンドウを前面に」を依頼して終了する
-    static let bringAllToFrontNotification = Notification.Name("com.am921.ttemp.bringAllToFront")
+    static let bringAllToFrontNotification = Notification.Name(
+        "\(Bundle.main.bundleIdentifier ?? DiagnosticLaunchPolicy.productionIdentifier).bringAllToFront")
 
     private let preferences: Preferences
     private let stateStore: StateStore
@@ -21,9 +22,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
     private lazy var onboardingController = OnboardingWindowController(preferences: preferences)
     /// 自動更新（docs/SIGNING.md）。生成した時点で定期チェックが動き出す
-    private lazy var updaterController = SPUStandardUpdaterController(startingUpdater: diagnostics == nil,
-                                                                      updaterDelegate: nil,
-                                                                      userDriverDelegate: nil)
+    private lazy var updaterController = SPUStandardUpdaterController(
+        startingUpdater: diagnostics == nil && Bundle.main.bundleIdentifier == DiagnosticLaunchPolicy.productionIdentifier,
+        updaterDelegate: nil,
+        userDriverDelegate: nil)
 
     init(diagnostics: RuntimeDiagnostics? = nil) {
         self.diagnostics = diagnostics
@@ -76,6 +78,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Exercise the signed production startup and controllers without touching
         // real notes, preferences, login items, clipboard, TCC, or update servers.
+        // The launch policy also keeps local diagnostics off the production bundle ID.
         if let diagnostics {
             diagnostics.start(windowManager: windowManager, statusItem: statusItem,
                               updater: updaterController.updater)

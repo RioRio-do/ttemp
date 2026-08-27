@@ -4,7 +4,8 @@ set -Eeuo pipefail
 cd "$(dirname "$0")/.."
 : "${TTEMP_SIGN_IDENTITY:?Run through scripts/test-release.sh with a disposable signing identity}"
 : "${TTEMP_KEYCHAIN:?Run through scripts/test-release.sh with a disposable keychain}"
-APP=$(cd "${1:-build/DerivedData/Build/Products/Release/Ttemp.app}" && pwd)
+DERIVED_DATA=${TTEMP_TEST_DERIVED_DATA:-build/RuntimeTests}
+APP=$(cd "${1:-$DERIVED_DATA/Build/Products/Release/Ttemp.app}" && pwd)
 WORK_DIR=$(mktemp -d "${TMPDIR:-/tmp}/ttemp-update-test.XXXXXX")
 SERVER_PID=
 WATCHDOG_PID=
@@ -48,8 +49,8 @@ URL="http://127.0.0.1:$PORT"
 
 # Compile the CLI from the same pinned Sparkle revision as the app; not a separate
 # downloaded tool. Load the exact signed framework embedded by our release build.
-SPARKLE_SOURCE=build/DerivedData/SourcePackages/checkouts/Sparkle/sparkle-cli
-SPARKLE_FRAMEWORKS=build/DerivedData/SourcePackages/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64
+SPARKLE_SOURCE="$DERIVED_DATA/SourcePackages/checkouts/Sparkle/sparkle-cli"
+SPARKLE_FRAMEWORKS="$DERIVED_DATA/SourcePackages/artifacts/sparkle/Sparkle/Sparkle.xcframework/macos-arm64_x86_64"
 xcrun clang -fobjc-arc -fmodules -F "$SPARKLE_FRAMEWORKS" \
     '-DSPU_OBJC_DIRECT=__attribute__((objc_direct))' \
     '-DSPU_OBJC_DIRECT_MEMBERS=__attribute__((objc_direct_members))' \

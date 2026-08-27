@@ -87,7 +87,12 @@ final class StateStore {
     static var defaultDirectory: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support")
+#if DEBUG
+        // The separate Debug bundle can run alongside production; never share its notes.
+        return base.appendingPathComponent("Ttemp Development", isDirectory: true)
+#else
         return base.appendingPathComponent("Ttemp", isDirectory: true)
+#endif
     }
 
     var stateFileURL: URL { directory.appendingPathComponent("state.json") }

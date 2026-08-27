@@ -34,7 +34,9 @@ xcodegen generate
 xcodebuild -project Ttemp.xcodeproj -scheme Ttemp -configuration Debug build
 ```
 
-配布版の検証（使い捨て鍵・隔離データ）: `./scripts/test-release.sh`
+Debug版は本番と別のアプリID・保存先を使います。
+配布処理の検証（専用アプリID・使い捨て鍵・隔離データ）: `./scripts/test-release.sh`
+メニューバーの実表示は[別途確認](docs/SIGNING.md#ローカル検証公開しない)します。
 
 ## リリース
 
