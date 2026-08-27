@@ -13,11 +13,13 @@ cleanup() {
 }
 trap cleanup EXIT
 umask 077
-openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=Ttemp Release Test' \
+# Use the platform tool that produced the distribution certificate; Homebrew's
+# OpenSSL can add different default X.509 extensions to the same request.
+/usr/bin/openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=Ttemp Release Test' \
     -addext 'keyUsage=critical,digitalSignature' -addext 'extendedKeyUsage=critical,codeSigning' \
     -addext 'basicConstraints=critical,CA:FALSE' \
     -keyout "$WORK_DIR/key.pem" -out "$WORK_DIR/cert.pem" >/dev/null 2>&1
-openssl pkcs12 -export -inkey "$WORK_DIR/key.pem" -in "$WORK_DIR/cert.pem" \
+/usr/bin/openssl pkcs12 -export -inkey "$WORK_DIR/key.pem" -in "$WORK_DIR/cert.pem" \
     -name 'Ttemp Release Test' \
     -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1 \
     -passout pass:temporary-test-only -out "$WORK_DIR/cert.p12"
@@ -27,7 +29,7 @@ security unlock-keychain -p temporary-test-only "$KEYCHAIN"
 security import "$WORK_DIR/cert.p12" -k "$KEYCHAIN" -P temporary-test-only -A -T /usr/bin/codesign
 security list-keychains -d user -s "$KEYCHAIN" "${ORIGINAL_KEYCHAINS[@]}"
 export TTEMP_KEYCHAIN="$KEYCHAIN"
-TTEMP_SIGN_IDENTITY=$(openssl x509 -in "$WORK_DIR/cert.pem" -noout -fingerprint -sha1 | sed 's/^.*=//;s/://g')
+TTEMP_SIGN_IDENTITY=$(/usr/bin/openssl x509 -in "$WORK_DIR/cert.pem" -noout -fingerprint -sha1 | sed 's/^.*=//;s/://g')
 export TTEMP_SIGN_IDENTITY
 
 # Match the production keychain setup and fail before building if the imported

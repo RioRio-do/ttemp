@@ -1,6 +1,6 @@
 #!/bin/bash
 # Exercise Sparkle's real helpers against disposable app copies and a loopback feed.
-set -euo pipefail
+set -Eeuo pipefail
 cd "$(dirname "$0")/.."
 : "${TTEMP_SIGN_IDENTITY:?Run through scripts/test-release.sh with a disposable signing identity}"
 : "${TTEMP_KEYCHAIN:?Run through scripts/test-release.sh with a disposable keychain}"
@@ -11,6 +11,12 @@ WATCHDOG_PID=
 CLI_PID=
 fixture() { xcrun swift -module-cache-path "$WORK_DIR/swift-cache" scripts/update-fixture.swift "$@"; }
 cleanup() {
+    local result=$?
+    if [ "$result" -ne 0 ]; then
+        for log in server.log update.log; do
+            [ ! -f "$WORK_DIR/$log" ] || cat "$WORK_DIR/$log" >&2
+        done
+    fi
     [ -z "$CLI_PID" ] || kill "$CLI_PID" 2>/dev/null || true
     [ -z "$WATCHDOG_PID" ] || kill "$WATCHDOG_PID" 2>/dev/null || true
     [ -z "$SERVER_PID" ] || kill "$SERVER_PID" 2>/dev/null || true
@@ -21,6 +27,7 @@ cleanup() {
     rm -rf "$WORK_DIR"
 }
 trap cleanup EXIT
+trap 'printf "Update fixture failed at line %s: %s\n" "$LINENO" "$BASH_COMMAND" >&2' ERR
 umask 077
 mkdir "$WORK_DIR/served"
 # Only this temporary directory is served, and only to this Mac.
