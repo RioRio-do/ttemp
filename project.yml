@@ -100,3 +100,6 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.am921.ttemp.tests
         GENERATE_INFOPLIST_FILE: YES
+        # XCTest is a loadable test bundle, not a stripped distribution executable.
+        DEPLOYMENT_POSTPROCESSING: NO
+        STRIP_INSTALLED_PRODUCT: NO

@@ -441,6 +441,7 @@ Input Monitoring は §2 の listen-only key/mouse event 検出だけに使う�
 
 unit test は App host を起動せず、次の純粋ロジックと永続化境界を直接検証する。
 永続化I/Oの障害は専用protocol経由で注入し、SDKごとに並行性注釈が異なるFoundationクラスを継承しない。
+Debug/Releaseの両構成で実行する。テストbundleには配布アプリ用のdeployment post-processingとstripを適用しない。
 
 - Shift chord の成立、無効化、reset。
 - window placement と復元 clamp。
@@ -459,7 +460,7 @@ CI は少なくとも次を行う。
 
 1. 固定versionとSHA-256を検証したXcodeGenでprojectを生成し、Sparkleの固定revisionを解決する。
 2. code signing を無効化した Debug app build を明示的に成功させる。
-3. `TtempTests` を実行して全 test を成功させる。
+3. `TtempTests` をDebug/Releaseの両構成で実行して全 test を成功させる。
 4. PRでも使い捨て自己署名証明書と`com.am921.ttemp.runtime-test.<UUID>`でUniversal Releaseを`build/RuntimeTests`へ生成し、`scripts/test-release.sh`で実起動、ZIP往復、第三者library拒否、制約を外した負例、署名検証器の負例とローカルSparkle更新を検証する。本番秘密鍵・本番Bundle IDは使わない。更新fixtureはloopbackのみで配信し、ログの文面ではなく起動通知を最大30秒待つ。
 5. 1〜4はmacOS 15 arm64 / Intel、macOS 26 arm64で行い、全成功を固定名`ビルドとテスト`で集約する。branch protectionのrequired context名を変更しない。
 6. Release workflowでは本番identityで再ビルドし、DMG/ZIP/appcastの存在・構造・署名情報と最終artifactの実起動を検証する。
