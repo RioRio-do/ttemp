@@ -797,7 +797,10 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
     }
 
     private func fadeOutAndClose() {
-        window.fade(to: 0, duration: Self.fadeDuration) { [weak self] in
+        window.fade(to: 0, duration: Self.fadeDuration)
+        // Closing is a lifecycle operation, not an animation completion. AppKit
+        // may coalesce/cancel overlapping fades when a new note closes immediately.
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.fadeDuration) { [weak self] in
             guard let self else { return }
             self.window.close()
             self.onClosed?(self)

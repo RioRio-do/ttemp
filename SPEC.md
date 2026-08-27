@@ -114,6 +114,7 @@ Ttemp は macOS 14 以降で動く、メニューバー常駐型の一時メモ�
 ### 3.7 フィードバックとフォーカス復帰
 
 - 表示・明示終了は0.12秒のフェードを使う。
+- 終了はフェード開始から0.12秒後にメインキューで確定する。表示直後の終了などでアニメーションが中断・統合されても、完了通知の有無に依存してノートを残さない。
 - 受理できないペースト、ドロップ、画像入出力失敗は横方向の shake で知らせる。基準位置からの offset は `[0, -8, +8, -4.8, +4.8, 0]` pt、全体0.24秒。
 - 明示的に閉じるとき、Ttemp が active ならフェード開始前に「自アプリの次に前面ウィンドウを持つ他アプリ」へフォーカスを譲る。ピン留めされた他の Ttemp ウィンドウは隠さない。
 
@@ -457,7 +458,7 @@ CI は少なくとも次を行う。
 1. 固定versionとSHA-256を検証したXcodeGenでprojectを生成し、Sparkleの固定revisionを解決する。
 2. code signing を無効化した Debug app build を明示的に成功させる。
 3. `TtempTests` を実行して全 test を成功させる。
-4. PRでも使い捨て自己署名証明書でUniversal Releaseを生成し、`scripts/test-release.sh`で実起動、ZIP往復、第三者library拒否、制約を外した負例、署名検証器の負例とローカルSparkle更新を検証する。本番秘密鍵は使わない。
+4. PRでも使い捨て自己署名証明書でUniversal Releaseを生成し、`scripts/test-release.sh`で実起動、ZIP往復、第三者library拒否、制約を外した負例、署名検証器の負例とローカルSparkle更新を検証する。本番秘密鍵は使わない。更新fixtureはloopbackのみで配信し、ログの文面ではなく起動通知を最大30秒待つ。
 5. 1〜4はmacOS 15 arm64 / Intel、macOS 26 arm64で行い、全成功を固定名`ビルドとテスト`で集約する。branch protectionのrequired context名を変更しない。
 6. Release workflowでは本番identityで再ビルドし、DMG/ZIP/appcastの存在・構造・署名情報と最終artifactの実起動を検証する。
 7. 日英リリースノートの形式と、生成・欠落・誤version・公開済みノート改変・再利用防止・merge時の採番を独立jobで検証する。このjobも`ビルドとテスト`の成功条件に含める。公開jobでは最新の公開済みReleaseに対するノート生成を必須とする。
@@ -466,6 +467,7 @@ CI は少なくとも次を行う。
 
 - 本体の`--self-test`は一意な一時state directory、専用UserDefaults suite、専用copy/paste用pasteboardを使う。既存メモ、一般クリップボード、ログイン項目を変更せず、TCC要求・event tap・ネットワーク更新を開始しない。
 - 明示的な診断モードに限りApplications制約と単一インスタンス制約を外し、通常のcontrollerでstatus item、日英メニュー、テキスト入力・paste・undo/redo・上限、文字サイズ・pin、画像import、状態保存復元、close時copy、最後のwindow後の常駐を検証する。成功markerと終了codeを両方要求し、外部watchdogを45秒にする。
+- 診断の直接呼び出しは入力イベントではないため、テキスト操作ごとのUndo境界を明示し、検証後は通常のイベント単位設定へ戻す。固定時間のsleepで操作を分離しない。
 - `--probe-library PATH`は`--self-test`専用。実在する署名済み第三者dylibがOSのlibrary constraintで拒否されることを確認する。
 - `--isolated`は同じ隔離データで手動UI確認用の空メモを開く。通常のmain menuと言語変更経路を使い、login設定は専用defaults内だけで模擬する。正常終了時に診断データを破棄する。
 - `scripts/test-update.sh`は同じ固定revisionのSparkle CLIをbuildし、一意なbundle IDのappコピーと使い捨てEdDSA鍵、127.0.0.1だけのfeedで署名不正の拒否・helperによる更新・更新後の実起動を確認する。実アプリと公開feedは変更しない。

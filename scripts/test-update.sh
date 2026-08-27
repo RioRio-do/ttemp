@@ -30,15 +30,20 @@ trap cleanup EXIT
 trap 'printf "Update fixture failed at line %s: %s\n" "$LINENO" "$BASH_COMMAND" >&2' ERR
 umask 077
 mkdir "$WORK_DIR/served"
-# Only this temporary directory is served, and only to this Mac.
-python3 -u -m http.server 0 --bind 127.0.0.1 --directory "$WORK_DIR/served" > "$WORK_DIR/server.log" 2>&1 &
+# Only this temporary directory is served, and only to this Mac. Do not parse
+# Python's human-facing logs or assume a cold CI interpreter starts in 5 seconds.
+python3 -u scripts/update-test-server.py "$WORK_DIR/served" "$WORK_DIR/port" > "$WORK_DIR/server.log" 2>&1 &
 SERVER_PID=$!
-for ((i=0; i<50; i++)); do
-    PORT=$(sed -n 's/.*port \([0-9]*\) .*/\1/p' "$WORK_DIR/server.log")
-    [ -z "$PORT" ] || break
-    sleep 0.1
+PORT=
+for ((i=0; i<60; i++)); do
+    if [ -f "$WORK_DIR/port" ]; then
+        IFS= read -r PORT < "$WORK_DIR/port"
+        break
+    fi
+    kill -0 "$SERVER_PID" 2>/dev/null || { echo 'Update test server exited before readiness' >&2; exit 1; }
+    sleep 0.5
 done
-[[ "$PORT" =~ ^[0-9]+$ ]] || { cat "$WORK_DIR/server.log" >&2; exit 1; }
+[[ "$PORT" =~ ^[0-9]+$ ]] || { echo 'Update test server did not become ready within 30 seconds' >&2; exit 1; }
 URL="http://127.0.0.1:$PORT"
 
 # Compile the CLI from the same pinned Sparkle revision as the app; not a separate

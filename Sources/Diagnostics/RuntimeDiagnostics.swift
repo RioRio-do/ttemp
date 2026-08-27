@@ -138,29 +138,38 @@ final class RuntimeDiagnostics {
         let note = try newNote(manager, statusItem: statusItem)
         try check(note.window.isVisible, "Note window is not visible")
         guard let editor = textView(in: note.window.contentView) else { throw Failure(description: "Missing editor") }
-        editor.insertText("日本語 📝", replacementRange: NSRange(location: 0, length: 0))
-        try check(note.text == "日本語 📝", "Unicode text input")
-        try await Task.sleep(nanoseconds: 50_000_000)
-        editor.breakUndoCoalescing()
-        clipboard.clearContents()
-        clipboard.setString("\r\nsecond\u{00a0}line", forType: .string)
-        editor.paste(nil)
+        guard let undo = editor.undoManager else { throw Failure(description: "Missing undo manager") }
         let pasted = "日本語 📝\nsecond\u{00a0}line"
-        try check(note.text == pasted, "Plain-text paste normalization")
-        try await Task.sleep(nanoseconds: 50_000_000)
-        editor.undoManager?.undo()
-        try check(note.text == "日本語 📝", "Paste undo")
-        editor.undoManager?.redo()
-        try check(note.text == pasted, "Paste redo")
-        try await Task.sleep(nanoseconds: 50_000_000)
-        editor.setSelectedRange(NSRange(location: 0, length: (note.text as NSString).length))
-        editor.copy(nil)
-        try check(clipboard.string(forType: .string) == pasted, "Copy must use the isolated clipboard")
-        editor.cut(nil)
-        try check(note.text.isEmpty, "Cut must remove selected text")
-        try await Task.sleep(nanoseconds: 50_000_000)
-        editor.undoManager?.undo()
-        try check(note.text == pasted, "Cut undo")
+        do {
+            // Direct calls in a Task are not separate AppKit input events. Model
+            // their undo boundaries explicitly instead of racing run-loop timing.
+            let groupsByEvent = undo.groupsByEvent
+            undo.groupsByEvent = false
+            defer { undo.groupsByEvent = groupsByEvent }
+            func edit(_ action: () -> Void) {
+                undo.beginUndoGrouping()
+                action()
+                editor.breakUndoCoalescing()
+                undo.endUndoGrouping()
+            }
+            edit { editor.insertText("日本語 📝", replacementRange: NSRange(location: 0, length: 0)) }
+            try check(note.text == "日本語 📝", "Unicode text input")
+            clipboard.clearContents()
+            clipboard.setString("\r\nsecond\u{00a0}line", forType: .string)
+            edit { editor.paste(nil) }
+            try check(note.text == pasted, "Plain-text paste normalization")
+            undo.undo()
+            try check(note.text == "日本語 📝", "Paste undo")
+            undo.redo()
+            try check(note.text == pasted, "Paste redo")
+            editor.setSelectedRange(NSRange(location: 0, length: (note.text as NSString).length))
+            editor.copy(nil)
+            try check(clipboard.string(forType: .string) == pasted, "Copy must use the isolated clipboard")
+            edit { editor.cut(nil) }
+            try check(note.text.isEmpty, "Cut must remove selected text")
+            undo.undo()
+            try check(note.text == pasted, "Cut undo")
+        }
         editor.setSelectedRange(NSRange(location: 0, length: (note.text as NSString).length))
         editor.insertText(String(repeating: "x", count: PlainTextSanitizer.maximumUTF16Length + 1),
                           replacementRange: editor.selectedRange())
