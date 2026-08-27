@@ -1,5 +1,19 @@
 import Foundation
 
+/// State-store I/O is serialized. A narrow interface lets tests inject failures
+/// without inheriting FileManager's SDK-dependent Sendable annotations.
+protocol StateFileManaging {
+    func fileExists(atPath path: String) -> Bool
+    func moveItem(at srcURL: URL, to dstURL: URL) throws
+    func contentsOfDirectory(at url: URL, includingPropertiesForKeys keys: [URLResourceKey]?,
+                             options mask: FileManager.DirectoryEnumerationOptions) throws -> [URL]
+    func createDirectory(at url: URL, withIntermediateDirectories createIntermediates: Bool,
+                         attributes: [FileAttributeKey: Any]?) throws
+    func removeItem(at url: URL) throws
+}
+
+extension FileManager: StateFileManaging {}
+
 /// `state.json` の保存・読込・デバウンス・破損処理（SPEC §10）。
 final class StateStore {
     static let maximumNoteCount = 32
@@ -36,7 +50,7 @@ final class StateStore {
     let pendingImageImports = PendingImageImports()
     private let debounceInterval: TimeInterval
     private let maxSaveDelay: TimeInterval
-    private let fileManager: FileManager
+    private let fileManager: any StateFileManaging
     private let uptimeProvider: () -> TimeInterval
     /// JSON エンコード、ファイル書き込み、画像ディレクトリ走査を直列化する。
     /// ノート本文が大きくても AppKit のメインスレッドを止めない。
@@ -61,7 +75,7 @@ final class StateStore {
     init(directory: URL = StateStore.defaultDirectory,
          debounceInterval: TimeInterval = StateStore.defaultDebounceInterval,
          maxSaveDelay: TimeInterval = StateStore.defaultMaxSaveDelay,
-         fileManager: FileManager = .default,
+         fileManager: any StateFileManaging = FileManager.default,
          uptimeProvider: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
         self.directory = directory
         self.debounceInterval = max(0, debounceInterval)
@@ -166,7 +180,7 @@ final class StateStore {
         hasCheckedRecoveryBackups = true
         do {
             let entries = try fileManager.contentsOfDirectory(at: directory,
-                                                               includingPropertiesForKeys: nil)
+                                                               includingPropertiesForKeys: nil, options: [])
             let prefixes = ["state.json.corrupt-", "state.json.invalid-", "state.json.version-"]
             if entries.contains(where: { entry in
                 prefixes.contains(where: { entry.lastPathComponent.hasPrefix($0) })
@@ -249,7 +263,7 @@ final class StateStore {
     private func saveSynchronously(_ state: AppState, completedImports: Set<String>) throws {
         checkRecoveryBackupsIfNeeded()
         try Self.validate(state)
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true, attributes: nil)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(state)
@@ -342,7 +356,7 @@ final class StateStore {
         let entries: [URL]
         do {
             entries = try fileManager.contentsOfDirectory(at: imagesDirectoryURL,
-                                                          includingPropertiesForKeys: keys)
+                                                          includingPropertiesForKeys: keys, options: [])
         } catch {
             NSLog("[Ttemp] 孤児画像の一覧取得に失敗した: \(error.localizedDescription)")
             return

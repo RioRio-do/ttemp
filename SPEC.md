@@ -438,6 +438,7 @@ Input Monitoring は §2 の listen-only key/mouse event 検出だけに使う�
 ### 13.1 自動テスト
 
 unit test は App host を起動せず、次の純粋ロジックと永続化境界を直接検証する。
+永続化I/Oの障害は専用protocol経由で注入し、SDKごとに並行性注釈が異なるFoundationクラスを継承しない。
 
 - Shift chord の成立、無効化、reset。
 - window placement と復元 clamp。

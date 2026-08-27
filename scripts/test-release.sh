@@ -18,15 +18,28 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj '/CN=Ttemp Release Test'
     -addext 'basicConstraints=critical,CA:FALSE' \
     -keyout "$WORK_DIR/key.pem" -out "$WORK_DIR/cert.pem" >/dev/null 2>&1
 openssl pkcs12 -export -inkey "$WORK_DIR/key.pem" -in "$WORK_DIR/cert.pem" \
+    -name 'Ttemp Release Test' \
     -keypbe PBE-SHA1-3DES -certpbe PBE-SHA1-3DES -macalg sha1 \
     -passout pass:temporary-test-only -out "$WORK_DIR/cert.p12"
 security create-keychain -p temporary-test-only "$KEYCHAIN"
+security set-keychain-settings -lut 3600 "$KEYCHAIN"
 security unlock-keychain -p temporary-test-only "$KEYCHAIN"
-security import "$WORK_DIR/cert.p12" -k "$KEYCHAIN" -P temporary-test-only -A >/dev/null
+security import "$WORK_DIR/cert.p12" -k "$KEYCHAIN" -P temporary-test-only -A -T /usr/bin/codesign
 security list-keychains -d user -s "$KEYCHAIN" "${ORIGINAL_KEYCHAINS[@]}"
 export TTEMP_KEYCHAIN="$KEYCHAIN"
 TTEMP_SIGN_IDENTITY=$(openssl x509 -in "$WORK_DIR/cert.pem" -noout -fingerprint -sha1 | sed 's/^.*=//;s/://g')
 export TTEMP_SIGN_IDENTITY
+
+# Match the production keychain setup and fail before building if the imported
+# certificate/private-key pair is not usable on this macOS version.
+[[ "$TTEMP_SIGN_IDENTITY" =~ ^[0-9A-F]{40}$ ]]
+security find-certificate -a -Z "$KEYCHAIN" | grep -F "SHA-1 hash: $TTEMP_SIGN_IDENTITY"
+security find-identity -p codesigning "$KEYCHAIN"
+cp /usr/bin/true "$WORK_DIR/signing-probe"
+codesign --force --sign "$TTEMP_SIGN_IDENTITY" --keychain "$KEYCHAIN" \
+    --options runtime --timestamp=none "$WORK_DIR/signing-probe"
+codesign --verify --strict --all-architectures "$WORK_DIR/signing-probe"
+echo 'SIGNING_IDENTITY_TEST_OK'
 
 xcodegen generate
 xcodebuild -project Ttemp.xcodeproj -scheme Ttemp -configuration Release \

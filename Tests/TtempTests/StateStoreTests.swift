@@ -1,34 +1,42 @@
 import XCTest
 
-private final class RecoveryListingDeniedFileManager: FileManager, @unchecked Sendable {
-    let blockedDirectory: URL
+private final class FaultInjectingStateFileManager: StateFileManaging {
+    let blockedDirectory: URL?
+    let existenceUnavailable: Bool
+    var deniesRecoveryMove: Bool
 
-    init(blockedDirectory: URL) {
+    init(blockedDirectory: URL? = nil, existenceUnavailable: Bool = false, deniesRecoveryMove: Bool = false) {
         self.blockedDirectory = blockedDirectory
-        super.init()
+        self.existenceUnavailable = existenceUnavailable
+        self.deniesRecoveryMove = deniesRecoveryMove
     }
 
-    override func contentsOfDirectory(at url: URL,
-                                      includingPropertiesForKeys keys: [URLResourceKey]?,
-                                      options mask: FileManager.DirectoryEnumerationOptions = []) throws -> [URL] {
+    func contentsOfDirectory(at url: URL, includingPropertiesForKeys keys: [URLResourceKey]?,
+                             options mask: FileManager.DirectoryEnumerationOptions) throws -> [URL] {
         if url == blockedDirectory { throw CocoaError(.fileReadNoPermission) }
-        return try super.contentsOfDirectory(at: url, includingPropertiesForKeys: keys, options: mask)
+        return try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: keys, options: mask)
     }
-}
 
-private final class RecoveryMoveDeniedFileManager: FileManager, @unchecked Sendable {
-    var deniesRecoveryMove = true
-
-    override func moveItem(at srcURL: URL, to dstURL: URL) throws {
+    func moveItem(at srcURL: URL, to dstURL: URL) throws {
         if deniesRecoveryMove, srcURL.lastPathComponent == "state.json" {
             throw CocoaError(.fileWriteNoPermission)
         }
-        try super.moveItem(at: srcURL, to: dstURL)
+        try FileManager.default.moveItem(at: srcURL, to: dstURL)
     }
-}
 
-private final class UnavailableExistenceFileManager: FileManager, @unchecked Sendable {
-    override func fileExists(atPath path: String) -> Bool { false }
+    func fileExists(atPath path: String) -> Bool {
+        !existenceUnavailable && FileManager.default.fileExists(atPath: path)
+    }
+
+    func createDirectory(at url: URL, withIntermediateDirectories createIntermediates: Bool,
+                         attributes: [FileAttributeKey: Any]?) throws {
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: createIntermediates,
+                                                attributes: attributes)
+    }
+
+    func removeItem(at url: URL) throws {
+        try FileManager.default.removeItem(at: url)
+    }
 }
 
 /// SPEC §10 の永続化のテスト。
@@ -132,7 +140,8 @@ final class StateStoreTests: XCTestCase {
     func test_fileExistsのfalseだけで保存済み状態を空と判断しない() throws {
         let saved = AppState(notes: [makeNote()])
         try store.save(saved)
-        let uncertain = StateStore(directory: store.directory, fileManager: UnavailableExistenceFileManager())
+        let uncertain = StateStore(directory: store.directory,
+                                   fileManager: FaultInjectingStateFileManager(existenceUnavailable: true))
         XCTAssertEqual(uncertain.load(), .loaded(saved))
     }
 
@@ -530,7 +539,7 @@ final class StateStoreTests: XCTestCase {
         let images = ImageStore(directory: store.imagesDirectoryURL)
         try images.save(Data("recoverable original".utf8), reference: reference)
         let guarded = StateStore(directory: store.directory,
-                                 fileManager: RecoveryListingDeniedFileManager(blockedDirectory: store.directory))
+                                 fileManager: FaultInjectingStateFileManager(blockedDirectory: store.directory))
         try guarded.save(AppState())
         XCTAssertNotNil(images.load(reference))
     }
@@ -539,7 +548,7 @@ final class StateStoreTests: XCTestCase {
         try FileManager.default.createDirectory(at: store.directory, withIntermediateDirectories: true)
         let original = Data("{ damaged but potentially recoverable".utf8)
         try original.write(to: store.stateFileURL)
-        let files = RecoveryMoveDeniedFileManager()
+        let files = FaultInjectingStateFileManager(deniesRecoveryMove: true)
         let guarded = StateStore(directory: store.directory, fileManager: files)
         XCTAssertEqual(guarded.load(), .empty)
         let replacement = AppState(notes: [makeNote(text: "new note")])
@@ -560,7 +569,7 @@ final class StateStoreTests: XCTestCase {
         try FileManager.default.createDirectory(at: store.directory, withIntermediateDirectories: true)
         let original = Data("{ recover manually".utf8)
         try original.write(to: store.stateFileURL)
-        let files = RecoveryMoveDeniedFileManager()
+        let files = FaultInjectingStateFileManager(deniesRecoveryMove: true)
         let guarded = StateStore(directory: store.directory, fileManager: files)
         XCTAssertEqual(guarded.load(), .empty)
         let manualBackup = store.directory.appendingPathComponent("state.json.corrupt-manual")
