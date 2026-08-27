@@ -8,6 +8,7 @@ protocol NotePasteHandling: AnyObject {
 
 /// ノートのテキスト入力ビュー（SPEC §5）。
 final class NoteTextView: NSTextView {
+    var clipboard: NSPasteboard = .general
     /// Escape でウィンドウを閉じる要求（SPEC §3.5）
     var onEscape: (() -> Void)?
     /// ペースト／ドロップの受け口
@@ -119,9 +120,23 @@ final class NoteTextView: NSTextView {
 
     // MARK: - ペースト
 
+    override func copy(_ sender: Any?) {
+        guard clipboard.name != NSPasteboard.general.name else { return super.copy(sender) }
+        guard selectedRange().length > 0 else { return }
+        clipboard.clearContents()
+        clipboard.setString((string as NSString).substring(with: selectedRange()), forType: .string)
+    }
+
+    override func cut(_ sender: Any?) {
+        guard clipboard.name != NSPasteboard.general.name else { return super.cut(sender) }
+        guard isEditable, selectedRange().length > 0 else { return }
+        copy(sender)
+        delete(sender)
+    }
+
     override func paste(_ sender: Any?) {
         // SPEC §5.4 / §6.1: 判定とモード遷移は NoteWindowController に委ねる
-        _ = pasteHandler?.handlePasteboard(.general, isDrop: false)
+        _ = pasteHandler?.handlePasteboard(clipboard, isDrop: false)
     }
 
     override func pasteAsPlainText(_ sender: Any?) {

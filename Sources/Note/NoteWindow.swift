@@ -68,7 +68,7 @@ final class NoteWindow: NSWindow {
     /// `alphaValue` を動かす。`isOpaque == true` のまま alpha < 1 にすると、ウィンドウ
     /// サーバは「中身は完全不透明」と信じて背後との合成を省くため、フェード中の描画が
     /// 壊れて残像になる。アニメーションの前後で不透明フラグを正しく切り替える。
-    func fade(to alpha: CGFloat, duration: TimeInterval, completion: (() -> Void)? = nil) {
+    func fade(to alpha: CGFloat, duration: TimeInterval) {
         isOpaque = false
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = duration
@@ -81,7 +81,6 @@ final class NoteWindow: NSWindow {
                 // 不透明に戻すと影の形状の前提が変わる。明示的に作り直す
                 self.invalidateShadow()
             }
-            completion?()
         })
     }
 

@@ -5,6 +5,7 @@
 #     バージョン採番（major.minor は project.yml、patch はコミット数）
 #     → 「Ttemp Signing」で安定署名 → EdDSA 署名つき appcast 生成
 #     → GitHub Release 作成（初回用DMG + Sparkle用ZIP/appcast.xmlを添付）
+#   本文はrelease-notes/の未公開の日英ノートを使う。ノートなしの公開は停止する。
 #   リリースしたくない push はコミット件名の先頭に [skip release] を付ける。
 #
 # 必要なシークレット（scripts/setup-release-keys.sh が登録する）:
@@ -20,9 +21,27 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    name: ビルドとテスト
-    runs-on: macos-15
+  release_notes:
+    name: 配布スクリプト
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: 日英ノートと生成処理を検証
+        run: |
+          python3 scripts/release-notes.py check
+          python3 -B -m unittest discover -s Tests/ReleaseNotes -v
+      - name: 更新fixtureの起動を検証
+        run: python3 -B -m unittest discover -s Tests/Distribution -v
+
+  checks:
+    name: 検証 (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, macos-15-intel, macos-26]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -33,13 +52,29 @@ jobs:
         run: |
           xcodegen generate
           xcodebuild -project Ttemp.xcodeproj -scheme Ttemp -configuration Debug \
-            -destination 'platform=macOS' -derivedDataPath build/DerivedData \
+            -destination "platform=macOS,arch=$(uname -m)" -derivedDataPath build/DerivedData \
             CODE_SIGNING_ALLOWED=NO build
       - name: テスト
         run: |
           xcodebuild -project Ttemp.xcodeproj -scheme TtempTests \
-            -configuration Debug -destination 'platform=macOS' \
+            -configuration Debug -destination "platform=macOS,arch=$(uname -m)" \
             -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO test
+      - name: 自己署名したReleaseの実起動とZIP往復を検証
+        timeout-minutes: 15
+        run: ./scripts/test-release.sh
+
+  # Keep this exact context name: main branch protection requires it.
+  test:
+    name: ビルドとテスト
+    needs: [checks, release_notes]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: 全環境の検証成功を要求
+        env:
+          CHECK_RESULT: ${{ needs.checks.result }}
+          NOTES_RESULT: ${{ needs.release_notes.result }}
+        run: test "$CHECK_RESULT" = success && test "$NOTES_RESULT" = success
 
   release:
     name: リリース
@@ -67,11 +102,22 @@ jobs:
       - name: バージョンを決める
         id: version
         run: |
-          BASE=$(grep -m1 'MARKETING_VERSION:' project.yml | sed -E 's/.*"([0-9]+\.[0-9]+).*/\1/')
-          BUILD=$(git rev-list --count HEAD)
-          echo "version=$BASE.$BUILD" >> "$GITHUB_OUTPUT"
+          VERSION=$(python3 scripts/release-notes.py version)
+          BUILD=${VERSION##*.}
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "build=$BUILD" >> "$GITHUB_OUTPUT"
-          echo "リリース: v$BASE.$BUILD (build $BUILD)"
+          echo "リリース: v$VERSION (build $BUILD)"
+
+      - name: 公開済みReleaseからのノートを確認
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TTEMP_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # Failed releases can leave tags behind. Use the latest published Release,
+          # and fail closed on API errors instead of silently reusing old notes.
+          PREVIOUS_TAG=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)
+          python3 scripts/release-notes.py render --since "$PREVIOUS_TAG" --version "$TTEMP_VERSION" > /dev/null
+          echo "TTEMP_PREVIOUS_RELEASE=$PREVIOUS_TAG" >> "$GITHUB_ENV"
 
       - name: 署名用キーチェーンを用意
         timeout-minutes: 2
@@ -147,7 +193,7 @@ jobs:
             dist/Ttemp.dmg dist/Ttemp.zip dist/appcast.xml dist/SHA256SUMS \
             --target "$GITHUB_SHA" \
             --title "Ttemp ${{ steps.version.outputs.version }}" \
-            --generate-notes
+            --notes-file "dist/release-notes-v${{ steps.version.outputs.version }}.md"
 
       - name: 署名用一時ファイルを片付ける
         if: always()

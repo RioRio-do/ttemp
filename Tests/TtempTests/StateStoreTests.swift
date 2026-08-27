@@ -1,5 +1,44 @@
 import XCTest
 
+private final class FaultInjectingStateFileManager: StateFileManaging {
+    let blockedDirectory: URL?
+    let existenceUnavailable: Bool
+    var deniesRecoveryMove: Bool
+
+    init(blockedDirectory: URL? = nil, existenceUnavailable: Bool = false, deniesRecoveryMove: Bool = false) {
+        self.blockedDirectory = blockedDirectory
+        self.existenceUnavailable = existenceUnavailable
+        self.deniesRecoveryMove = deniesRecoveryMove
+    }
+
+    func contentsOfDirectory(at url: URL, includingPropertiesForKeys keys: [URLResourceKey]?,
+                             options mask: FileManager.DirectoryEnumerationOptions) throws -> [URL] {
+        if url == blockedDirectory { throw CocoaError(.fileReadNoPermission) }
+        return try FileManager.default.contentsOfDirectory(at: url, includingPropertiesForKeys: keys, options: mask)
+    }
+
+    func moveItem(at srcURL: URL, to dstURL: URL) throws {
+        if deniesRecoveryMove, srcURL.lastPathComponent == "state.json" {
+            throw CocoaError(.fileWriteNoPermission)
+        }
+        try FileManager.default.moveItem(at: srcURL, to: dstURL)
+    }
+
+    func fileExists(atPath path: String) -> Bool {
+        !existenceUnavailable && FileManager.default.fileExists(atPath: path)
+    }
+
+    func createDirectory(at url: URL, withIntermediateDirectories createIntermediates: Bool,
+                         attributes: [FileAttributeKey: Any]?) throws {
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: createIntermediates,
+                                                attributes: attributes)
+    }
+
+    func removeItem(at url: URL) throws {
+        try FileManager.default.removeItem(at: url)
+    }
+}
+
 /// SPEC §10 の永続化のテスト。
 final class StateStoreTests: XCTestCase {
     private var directory: URL!
@@ -96,6 +135,14 @@ final class StateStoreTests: XCTestCase {
 
     func test_ファイルがなければemptyを返す() {
         XCTAssertEqual(store.load(), .empty)
+    }
+
+    func test_fileExistsのfalseだけで保存済み状態を空と判断しない() throws {
+        let saved = AppState(notes: [makeNote()])
+        try store.save(saved)
+        let uncertain = StateStore(directory: store.directory,
+                                   fileManager: FaultInjectingStateFileManager(existenceUnavailable: true))
+        XCTAssertEqual(uncertain.load(), .loaded(saved))
     }
 
     func test_壊れたファイルは退避され空で起動する() throws {
@@ -310,6 +357,67 @@ final class StateStoreTests: XCTestCase {
 
     // MARK: - 画像ファイルの掃除
 
+    func test_取り込み中の画像は以前のスナップショットの保存で削除しない() throws {
+        let images = ImageStore(directory: store.imagesDirectoryURL, pendingImports: store.pendingImageImports)
+        let pending = ImageReference(id: UUID(), fileExtension: "png")
+        try images.save(Data("pending".utf8), reference: pending)
+        // A background import has written the original, but the main-thread
+        // completion has not yet installed its reference into a note.
+        try store.save(AppState())
+        XCTAssertNotNil(images.load(pending))
+        let note = NoteSnapshot(id: UUID(), content: .image(pending), frame: FrameSnapshot(.zero),
+                                isPinned: false, fontSizeOffset: 0)
+        try store.save(AppState(notes: [note]))
+        XCTAssertNotNil(images.load(pending))
+        try store.save(AppState())
+        XCTAssertNil(images.load(pending), "A committed, then closed image must still be pruned")
+    }
+
+    func test_取り込みをキャンセルすると原本と保護を解除する() throws {
+        let images = ImageStore(directory: store.imagesDirectoryURL, pendingImports: store.pendingImageImports)
+        let pending = ImageReference(id: UUID(), fileExtension: "png")
+        try images.save(Data("pending".utf8), reference: pending)
+        images.remove(pending)
+        XCTAssertNil(images.load(pending))
+        store.pendingImageImports.whilePruning(releasing: []) { XCTAssertTrue($0.isEmpty) }
+    }
+
+    func test_画像を最初の保存より前に閉じても孤児を回収する() throws {
+        let images = ImageStore(directory: store.imagesDirectoryURL, pendingImports: store.pendingImageImports)
+        let reference = ImageReference(id: UUID(), fileExtension: "png")
+        try images.save(Data("pending".utf8), reference: reference)
+        try store.save(AppState())
+        XCTAssertNotNil(images.load(reference))
+        images.didInstall(reference)
+        // The window is closed before any state containing the image is saved.
+        try store.save(AppState())
+        XCTAssertNil(images.load(reference))
+    }
+
+    func test_古いスナップショットは後から取り込まれた画像の保護を解除しない() {
+        let imports = store.pendingImageImports
+        let reference = ImageReference(id: UUID(), fileExtension: "png")
+        imports.protect(reference)
+        let oldSnapshot = imports.installedBeforeSnapshot()
+        imports.didInstall(reference)
+        imports.whilePruning(releasing: oldSnapshot) { XCTAssertTrue($0.contains(reference.fileName)) }
+        let newSnapshot = imports.installedBeforeSnapshot()
+        imports.whilePruning(releasing: newSnapshot) { XCTAssertTrue($0.isEmpty) }
+    }
+
+    func test_保存失敗では取り込み済み画像の保護を解除しない() throws {
+        let images = ImageStore(directory: store.imagesDirectoryURL, pendingImports: store.pendingImageImports)
+        let reference = ImageReference(id: UUID(), fileExtension: "png")
+        try images.save(Data("pending".utf8), reference: reference)
+        images.didInstall(reference)
+        let duplicate = makeNote()
+        XCTAssertThrowsError(try store.save(AppState(notes: [duplicate, duplicate])))
+        store.pendingImageImports.whilePruning(releasing: []) { XCTAssertTrue($0.contains(reference.fileName)) }
+        XCTAssertNotNil(images.load(reference))
+        try store.save(AppState())
+        XCTAssertNil(images.load(reference))
+    }
+
     func test_参照されていない画像ファイルは削除される() throws {
         let kept = ImageReference(id: UUID(), fileExtension: "png")
         let orphan = ImageReference(id: UUID(), fileExtension: "png")
@@ -368,6 +476,108 @@ final class StateStoreTests: XCTestCase {
 
         XCTAssertTrue(FileManager.default.fileExists(
             atPath: store.imagesDirectoryURL.appendingPathComponent(orphan.fileName).path))
+    }
+
+    func test_退避した状態が残る間は再起動後も画像を消さない() throws {
+        let reference = ImageReference(id: UUID(), fileExtension: "png")
+        let images = ImageStore(directory: store.imagesDirectoryURL)
+        try images.save(Data("recoverable original".utf8), reference: reference)
+        try Data("{ broken".utf8).write(to: store.stateFileURL)
+        guard case .recovered(let backup) = store.load() else { return XCTFail("recovered が返るべき") }
+
+        // A crash before the first replacement state is saved must also be safe.
+        let beforeSave = StateStore(directory: store.directory)
+        XCTAssertEqual(beforeSave.load(), .empty)
+        try beforeSave.save(AppState())
+        XCTAssertNotNil(images.load(reference))
+
+        // On subsequent launches the new state is valid, but the old backup may
+        // still be the only way to identify these originals for manual recovery.
+        let restarted = StateStore(directory: store.directory)
+        XCTAssertEqual(restarted.load(), .loaded(AppState()))
+        try restarted.save(AppState())
+        XCTAssertNotNil(images.load(reference))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: backup.path))
+
+        // Removing a backup is a separate, explicit recovery decision. Only a
+        // later session may resume normal orphan collection.
+        try FileManager.default.removeItem(at: backup)
+        let recovered = StateStore(directory: store.directory)
+        XCTAssertEqual(recovered.load(), .loaded(AppState()))
+        try recovered.save(AppState())
+        XCTAssertNil(images.load(reference))
+    }
+
+    func test_画像保護は退避中でも保存成功後に解放される() throws {
+        try FileManager.default.createDirectory(at: store.directory, withIntermediateDirectories: true)
+        try Data("{ broken".utf8).write(to: store.stateFileURL)
+        guard case .recovered = store.load() else { return XCTFail("recovered が返るべき") }
+        let reference = ImageReference(id: UUID(), fileExtension: "png")
+        let images = ImageStore(directory: store.imagesDirectoryURL, pendingImports: store.pendingImageImports)
+        try images.save(Data("new image".utf8), reference: reference)
+        images.didInstall(reference)
+        try store.save(AppState())
+        XCTAssertTrue(store.pendingImageImports.installedBeforeSnapshot().isEmpty)
+        XCTAssertNotNil(images.load(reference), "Recovery still disables deletion")
+    }
+
+    func test_上限違反や未知versionの退避もloadなしの保存で保護する() throws {
+        let reference = ImageReference(id: UUID(), fileExtension: "png")
+        let images = ImageStore(directory: store.imagesDirectoryURL)
+        try images.save(Data("recoverable original".utf8), reference: reference)
+        for reason in ["invalid", "version-99"] {
+            let backup = store.directory.appendingPathComponent("state.json.\(reason)-20260827-120000")
+            try Data("backup".utf8).write(to: backup)
+            try StateStore(directory: store.directory).save(AppState())
+            XCTAssertNotNil(images.load(reference), reason)
+            try FileManager.default.removeItem(at: backup)
+        }
+    }
+
+    func test_退避ファイルを確認できない場合は画像を消さない() throws {
+        let reference = ImageReference(id: UUID(), fileExtension: "png")
+        let images = ImageStore(directory: store.imagesDirectoryURL)
+        try images.save(Data("recoverable original".utf8), reference: reference)
+        let guarded = StateStore(directory: store.directory,
+                                 fileManager: FaultInjectingStateFileManager(blockedDirectory: store.directory))
+        try guarded.save(AppState())
+        XCTAssertNotNil(images.load(reference))
+    }
+
+    func test_状態の退避失敗時は上書きせず次の保存で退避を再試行する() throws {
+        try FileManager.default.createDirectory(at: store.directory, withIntermediateDirectories: true)
+        let original = Data("{ damaged but potentially recoverable".utf8)
+        try original.write(to: store.stateFileURL)
+        let files = FaultInjectingStateFileManager(deniesRecoveryMove: true)
+        let guarded = StateStore(directory: store.directory, fileManager: files)
+        XCTAssertEqual(guarded.load(), .empty)
+        let replacement = AppState(notes: [makeNote(text: "new note")])
+        XCTAssertThrowsError(try guarded.save(replacement))
+        XCTAssertEqual(try Data(contentsOf: store.stateFileURL), original)
+
+        files.deniesRecoveryMove = false
+        try guarded.save(replacement)
+        XCTAssertEqual(guarded.load(), .loaded(replacement))
+        let backups = try FileManager.default.contentsOfDirectory(at: store.directory,
+                                                                  includingPropertiesForKeys: nil)
+            .filter { $0.lastPathComponent.hasPrefix("state.json.corrupt-") }
+        XCTAssertEqual(backups.count, 1)
+        XCTAssertEqual(try Data(contentsOf: XCTUnwrap(backups.first)), original)
+    }
+
+    func test_退避失敗後に元データを手動退避しても保存を再開できる() throws {
+        try FileManager.default.createDirectory(at: store.directory, withIntermediateDirectories: true)
+        let original = Data("{ recover manually".utf8)
+        try original.write(to: store.stateFileURL)
+        let files = FaultInjectingStateFileManager(deniesRecoveryMove: true)
+        let guarded = StateStore(directory: store.directory, fileManager: files)
+        XCTAssertEqual(guarded.load(), .empty)
+        let manualBackup = store.directory.appendingPathComponent("state.json.corrupt-manual")
+        try FileManager.default.moveItem(at: store.stateFileURL, to: manualBackup)
+        files.deniesRecoveryMove = false
+        try guarded.save(AppState())
+        XCTAssertEqual(try Data(contentsOf: manualBackup), original)
+        XCTAssertEqual(guarded.load(), .loaded(AppState()))
     }
 
     func test_孤児掃除は無関係なファイルやディレクトリを消さない() throws {

@@ -35,6 +35,7 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
 
     private let imageStore: ImageStore
     private let preferences: Preferences
+    private let clipboard: NSPasteboard
 
     /// SPEC §3.2 / §3.3: 最前面固定
     var isPinned = false {
@@ -122,11 +123,13 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
          frame: NSRect,
          globalFontSize: CGFloat = FontSizeModel.defaultGlobalSize,
          imageStore: ImageStore,
-         preferences: Preferences = .shared) {
+         preferences: Preferences = .shared,
+         clipboard: NSPasteboard = .general) {
         self.id = id
         self.globalFontSize = globalFontSize
         self.imageStore = imageStore
         self.preferences = preferences
+        self.clipboard = clipboard
         window = NoteWindow(contentRect: frame)
 
         let contentBounds = window.contentView?.bounds ?? NSRect(origin: .zero, size: frame.size)
@@ -171,6 +174,7 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
         window.shortcutHandler = self
         textView.delegate = self
         textView.pasteHandler = self
+        textView.clipboard = clipboard
         textView.onEscape = { [weak self] in self?.requestClose() }
         textView.scrollHandler = { [weak self] event in self?.handleScrollWheel(event) ?? false }
         textView.contextMenuProvider = { [weak self] in self?.makeTextContextMenu() }
@@ -531,6 +535,7 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
                     self.installImage(reference: reference,
                                       displayImage: displayImage,
                                       resizeWindow: true)
+                    imageStore.didInstall(reference)
                     self.onStateChanged?()
                 }
             } catch {
@@ -582,6 +587,7 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
         let view = NoteImageView(frame: window.contentView?.bounds ?? .zero)
         view.autoresizingMask = [.width, .height]
         view.pasteHandler = self
+        view.clipboard = clipboard
         view.onCopy = { [weak self] in self?.copyImageToClipboard() }
         view.menuProvider = { [weak self] in self?.makeImageContextMenu() }
         view.scrollHandler = { [weak self] event in self?.handleScrollWheel(event) ?? false }
@@ -640,7 +646,7 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
         }
         // 原本が消えて表示画像の変換にも失敗した場合、既存クリップボードを空にしない。
         guard !representations.isEmpty else { return }
-        let pasteboard = NSPasteboard.general
+        let pasteboard = clipboard
         pasteboard.clearContents()
         for (data, type) in representations {
             pasteboard.setData(data, forType: type)
@@ -662,14 +668,20 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
         }
         panel.beginSheetModal(for: window) { [weak self] response in
             guard response == .OK, let url = panel.url, let self else { return }
-            let reference = imagePayload.reference
-            let imageStore = self.imageStore
+            let original: FileHandle
+            do {
+                original = try self.imageStore.openOriginal(imagePayload.reference)
+            } catch {
+                NSLog("[Ttemp] 画像の書き出しに失敗した: \(error.localizedDescription)")
+                self.window.shake()
+                return
+            }
             // 原本の読込・デコード・再エンコード・書込は巨大画像で重くなるため、
             // 保存先が確定してからバックグラウンドで行う。
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 do {
-                    guard let originalData = imageStore.load(reference),
-                          let data = ImageExporter.encode(originalData: originalData, to: format) else {
+                    let originalData = try ImageStore.readOriginal(from: original)
+                    guard let data = ImageExporter.encode(originalData: originalData, to: format) else {
                         throw ImageSaveError.encodingFailed
                     }
                     try data.write(to: url, options: .atomic)
@@ -779,13 +791,16 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
             copyImageToClipboard()
             return
         }
-        let pasteboard = NSPasteboard.general
+        let pasteboard = clipboard
         pasteboard.clearContents()
         pasteboard.setString(textView.string, forType: .string)
     }
 
     private func fadeOutAndClose() {
-        window.fade(to: 0, duration: Self.fadeDuration) { [weak self] in
+        window.fade(to: 0, duration: Self.fadeDuration)
+        // Closing is a lifecycle operation, not an animation completion. AppKit
+        // may coalesce/cancel overlapping fades when a new note closes immediately.
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.fadeDuration) { [weak self] in
             guard let self else { return }
             self.window.close()
             self.onClosed?(self)

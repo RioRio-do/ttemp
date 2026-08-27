@@ -1,5 +1,19 @@
 import Foundation
 
+/// State-store I/O is serialized. A narrow interface lets tests inject failures
+/// without inheriting FileManager's SDK-dependent Sendable annotations.
+protocol StateFileManaging {
+    func fileExists(atPath path: String) -> Bool
+    func moveItem(at srcURL: URL, to dstURL: URL) throws
+    func contentsOfDirectory(at url: URL, includingPropertiesForKeys keys: [URLResourceKey]?,
+                             options mask: FileManager.DirectoryEnumerationOptions) throws -> [URL]
+    func createDirectory(at url: URL, withIntermediateDirectories createIntermediates: Bool,
+                         attributes: [FileAttributeKey: Any]?) throws
+    func removeItem(at url: URL) throws
+}
+
+extension FileManager: StateFileManaging {}
+
 /// `state.json` の保存・読込・デバウンス・破損処理（SPEC §10）。
 final class StateStore {
     static let maximumNoteCount = 32
@@ -33,9 +47,10 @@ final class StateStore {
     static let defaultMaxSaveDelay: TimeInterval = 5.0
 
     let directory: URL
+    let pendingImageImports = PendingImageImports()
     private let debounceInterval: TimeInterval
     private let maxSaveDelay: TimeInterval
-    private let fileManager: FileManager
+    private let fileManager: any StateFileManaging
     private let uptimeProvider: () -> TimeInterval
     /// JSON エンコード、ファイル書き込み、画像ディレクトリ走査を直列化する。
     /// ノート本文が大きくても AppKit のメインスレッドを止めない。
@@ -44,12 +59,15 @@ final class StateStore {
     private var retrySave: DispatchWorkItem?
     /// 未保存の変更のうち、いちばん古いものが積まれた時刻
     private var oldestPendingChangeUptime: TimeInterval?
-    /// 状態ファイルを読めなかったセッションでは孤児画像の掃除をしない。
-    /// 復元できなかっただけで、退避した state.json から手で拾える可能性を残すため（SPEC §10.4）。
+    /// 退避した状態が残る間は、再起動後も復旧用の画像を掃除しない（SPEC §10.4）。
     private var allowsImagePruning = true
-    /// 前回 prune 時に参照されていた画像ファイル名。参照集合が変わらない限り
+    private var hasCheckedRecoveryBackups = false
+    /// An unreadable state must reach a backup before any new state replaces it.
+    private var pendingQuarantineReason: String?
+    /// 前回 prune 時に参照されていた画像ファイル名。参照・取り込み保護集合が変わらない限り
     /// ディレクトリ走査を繰り返さない（タイピング中の1秒ごとの保存で I/O しないため）。
     private var lastPrunedReferences: Set<String>?
+    private var lastPrunedProtected: Set<String>?
 
     /// 保存すべき状態を返すクロージャ。`scheduleSave()` / `flush()` の時点で評価される。
     var snapshotProvider: (() -> AppState)?
@@ -57,7 +75,7 @@ final class StateStore {
     init(directory: URL = StateStore.defaultDirectory,
          debounceInterval: TimeInterval = StateStore.defaultDebounceInterval,
          maxSaveDelay: TimeInterval = StateStore.defaultMaxSaveDelay,
-         fileManager: FileManager = .default,
+         fileManager: any StateFileManaging = FileManager.default,
          uptimeProvider: @escaping () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }) {
         self.directory = directory
         self.debounceInterval = max(0, debounceInterval)
@@ -82,7 +100,7 @@ final class StateStore {
     }
 
     private func loadSynchronously() -> LoadResult {
-        guard fileManager.fileExists(atPath: stateFileURL.path) else { return .empty }
+        checkRecoveryBackupsIfNeeded()
 
         do {
             let keys: Set<URLResourceKey> = [.isRegularFileKey, .isSymbolicLinkKey, .fileSizeKey]
@@ -104,18 +122,35 @@ final class StateStore {
             let state = try JSONDecoder().decode(AppState.self, from: data)
             guard state.version == AppState.currentVersion else {
                 // 未知のバージョンは解釈できない。上書きせず退避する。
-                allowsImagePruning = false
-                return .recovered(backupURL: try quarantineStateFile(reason: "version-\(state.version)"))
+                return recoverStateFile(reason: "version-\(state.version)")
             }
             try Self.validate(state)
             return .loaded(state)
         } catch {
+            // fileExists also returns false for access failures. Only an actual
+            // missing-file error is an empty installation; preserve other failures.
+            if Self.isMissingFileError(error) { return .empty }
             NSLog("[Ttemp] state.json を読めなかった: \(error.localizedDescription)")
-            allowsImagePruning = false
             let reason = error is StateValidationError ? "invalid" : "corrupt"
-            if let backup = try? quarantineStateFile(reason: reason) {
-                return .recovered(backupURL: backup)
-            }
+            return recoverStateFile(reason: reason)
+        }
+    }
+
+    private static func isMissingFileError(_ error: Error) -> Bool {
+        let error = error as NSError
+        return error.domain == NSCocoaErrorDomain
+            && [NSFileNoSuchFileError, NSFileReadNoSuchFileError].contains(error.code)
+    }
+
+    private func recoverStateFile(reason: String) -> LoadResult {
+        allowsImagePruning = false
+        pendingQuarantineReason = reason
+        do {
+            let backup = try quarantineStateFile(reason: reason)
+            pendingQuarantineReason = nil
+            return .recovered(backupURL: backup)
+        } catch {
+            NSLog("[Ttemp] 状態を退避できないため元データを保持する: \(error.localizedDescription)")
             return .empty
         }
     }
@@ -135,6 +170,31 @@ final class StateStore {
         try fileManager.moveItem(at: stateFileURL, to: backup)
         NSLog("[Ttemp] 読めなかった state.json を退避した: \(backup.lastPathComponent)")
         return backup
+    }
+
+    /// Check once per store, on the serialized I/O queue, including when the
+    /// current state is absent or valid. An older quarantine can still reference
+    /// originals that are missing from the new state. Never guess on I/O failure.
+    private func checkRecoveryBackupsIfNeeded() {
+        guard !hasCheckedRecoveryBackups else { return }
+        hasCheckedRecoveryBackups = true
+        do {
+            let entries = try fileManager.contentsOfDirectory(at: directory,
+                                                               includingPropertiesForKeys: nil, options: [])
+            let prefixes = ["state.json.corrupt-", "state.json.invalid-", "state.json.version-"]
+            if entries.contains(where: { entry in
+                prefixes.contains(where: { entry.lastPathComponent.hasPrefix($0) })
+            }) {
+                allowsImagePruning = false
+            }
+        } catch {
+            // A new installation has no directory yet. Other failures cannot
+            // establish that recovery backups are absent, so preserve images.
+            if !Self.isMissingFileError(error) {
+                allowsImagePruning = false
+                NSLog("[Ttemp] 復旧データを確認できないため画像の掃除を停止した: \(error.localizedDescription)")
+            }
+        }
     }
 
     // MARK: - 保存
@@ -172,8 +232,9 @@ final class StateStore {
         retrySave = nil
         oldestPendingChangeUptime = nil
         guard let state = snapshotProvider?() else { return }
+        let completedImports = pendingImageImports.installedBeforeSnapshot()
         do {
-            try ioQueue.sync { try saveSynchronously(state) }
+            try ioQueue.sync { try saveSynchronously(state, completedImports: completedImports) }
         } catch {
             NSLog("[Ttemp] state.json の保存に失敗した: \(error.localizedDescription)")
         }
@@ -183,9 +244,10 @@ final class StateStore {
         pendingSave = nil
         oldestPendingChangeUptime = nil
         guard let state = snapshotProvider?() else { return }
+        let completedImports = pendingImageImports.installedBeforeSnapshot()
         ioQueue.async { [self] in
             do {
-                try saveSynchronously(state)
+                try saveSynchronously(state, completedImports: completedImports)
             } catch {
                 NSLog("[Ttemp] state.json の保存に失敗した: \(error.localizedDescription)")
                 scheduleRetryAfterFailure()
@@ -194,23 +256,37 @@ final class StateStore {
     }
 
     func save(_ state: AppState) throws {
-        try ioQueue.sync { try saveSynchronously(state) }
+        let completedImports = pendingImageImports.installedBeforeSnapshot()
+        try ioQueue.sync { try saveSynchronously(state, completedImports: completedImports) }
     }
 
-    private func saveSynchronously(_ state: AppState) throws {
+    private func saveSynchronously(_ state: AppState, completedImports: Set<String>) throws {
+        checkRecoveryBackupsIfNeeded()
         try Self.validate(state)
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true, attributes: nil)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(state)
         guard data.count <= Self.maximumStateFileByteCount else {
             throw StateValidationError.fileTooLarge
         }
+        if let reason = pendingQuarantineReason {
+            // A temporary permission/disk failure during load must not turn the
+            // next successful write into irreversible loss of the original.
+            // Retry the backup first; normal save retry handles continued failure.
+            do {
+                _ = try quarantineStateFile(reason: reason)
+            } catch {
+                guard Self.isMissingFileError(error) else { throw error }
+                // The original may have been moved away for manual recovery.
+            }
+            pendingQuarantineReason = nil
+        }
         // SPEC §10.4: アトミック書き込み（一時ファイルに書いてから rename）
         try data.write(to: stateFileURL, options: .atomic)
         // state.json を書いた後にだけ孤児画像を掃除する（順序を逆にすると
         // 保存に失敗した場合に参照されている画像を消してしまう）
-        pruneUnreferencedImages(keeping: state)
+        pruneUnreferencedImages(keeping: state, completedImports: completedImports)
     }
 
     private static func validate(_ state: AppState) throws {
@@ -252,18 +328,27 @@ final class StateStore {
 
     /// state から参照されていない画像ファイルを削除する。
     /// 孤児が生まれるのは参照集合が変わる保存（画像の追加・置換・ウィンドウの削除）と
-    /// 前セッションのクラッシュ残骸だけなので、集合が同じ間はスキップできる
+    /// 前セッションのクラッシュ残骸だけなので、参照・保護集合が同じ間はスキップできる
     /// （セッション最初の保存は `lastPrunedReferences == nil` で必ず走る）。
-    private func pruneUnreferencedImages(keeping state: AppState) {
-        guard allowsImagePruning else { return }
+    private func pruneUnreferencedImages(keeping state: AppState, completedImports: Set<String>) {
         let referenced = Set(state.notes.compactMap { note -> String? in
             guard case .image(let reference) = note.content else { return nil }
             return reference.fileName
         })
-        guard referenced != lastPrunedReferences else { return }
+        pendingImageImports.whilePruning(releasing: completedImports.union(referenced)) { protected in
+            // Completed imports no longer need in-memory protection even when
+            // quarantined state prevents any deletion for this session.
+            guard allowsImagePruning else { return }
+            pruneUnreferencedImages(referenced: referenced, protected: protected)
+        }
+    }
+
+    private func pruneUnreferencedImages(referenced: Set<String>, protected: Set<String>) {
+        guard referenced != lastPrunedReferences || protected != lastPrunedProtected else { return }
 
         guard fileManager.fileExists(atPath: imagesDirectoryURL.path) else {
             lastPrunedReferences = referenced
+            lastPrunedProtected = protected
             return
         }
 
@@ -271,7 +356,7 @@ final class StateStore {
         let entries: [URL]
         do {
             entries = try fileManager.contentsOfDirectory(at: imagesDirectoryURL,
-                                                          includingPropertiesForKeys: keys)
+                                                          includingPropertiesForKeys: keys, options: [])
         } catch {
             NSLog("[Ttemp] 孤児画像の一覧取得に失敗した: \(error.localizedDescription)")
             return
@@ -280,7 +365,8 @@ final class StateStore {
         var completedWithoutError = true
         for entry in entries {
             let name = entry.lastPathComponent
-            guard ImageReference.isManagedFileName(name), !referenced.contains(name) else { continue }
+            guard ImageReference.isManagedFileName(name), !referenced.contains(name),
+                  !protected.contains(name) else { continue }
             do {
                 let values = try entry.resourceValues(forKeys: Set(keys))
                 // 管理形式と同名でもディレクトリは再帰削除しない。通常ファイルと
@@ -294,6 +380,7 @@ final class StateStore {
         }
         if completedWithoutError {
             lastPrunedReferences = referenced
+            lastPrunedProtected = protected
         }
     }
 }

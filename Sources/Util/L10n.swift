@@ -29,13 +29,15 @@ enum AppLanguage: String, CaseIterable {
 /// `Preferences` ではなく `UserDefaults` を直接読むのは、テストターゲットにも
 /// 含まれる displayName 系（ImageExportFormat など）から参照されるため。
 enum L10n {
+    /// Diagnostics and tests use an isolated preferences domain.
+    static var defaults: UserDefaults = .standard
     static let defaultsKey = "appLanguage"
     /// 言語が切り替わったとき。開きっぱなしのウィンドウ（設定画面など）が拾って作り直す
     static let didChangeNotification = Notification.Name("com.am921.ttemp.languageDidChange")
 
     static var current: AppLanguage {
         get {
-            if let raw = UserDefaults.standard.string(forKey: defaultsKey),
+            if let raw = defaults.string(forKey: defaultsKey),
                let language = AppLanguage(rawValue: raw) {
                 return language
             }
@@ -43,7 +45,7 @@ enum L10n {
         }
         set {
             guard newValue != current else { return }
-            UserDefaults.standard.set(newValue.rawValue, forKey: defaultsKey)
+            defaults.set(newValue.rawValue, forKey: defaultsKey)
             NotificationCenter.default.post(name: didChangeNotification, object: nil)
         }
     }

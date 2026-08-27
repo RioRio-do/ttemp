@@ -25,6 +25,10 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>$(MACOSX_DEPLOYMENT_TARGET)</string>
+	<!-- Universal builds run natively on each CPU. Rosetta AOT code cannot satisfy
+	     our exact library constraint; never offer translated execution in Finder. -->
+	<key>LSRequiresNativeExecution</key>
+	<true/>
 	<!-- SPEC §1: Dock アイコンなし -->
 	<key>LSUIElement</key>
 	<true/>

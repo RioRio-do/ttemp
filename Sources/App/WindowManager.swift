@@ -8,6 +8,7 @@ final class WindowManager {
     private let preferences: Preferences
     private let stateStore: StateStore
     private let imageStore: ImageStore
+    private let clipboard: NSPasteboard
 
     /// 起動時に復元できなかったノート（画像を読めなかったもの）。
     /// ウィンドウは出さないが、次の保存でそのまま書き戻すために保持する。
@@ -31,10 +32,12 @@ final class WindowManager {
     /// 設定画面の表示を追従させるための通知
     var onGlobalFontSizeChanged: ((CGFloat) -> Void)?
 
-    init(preferences: Preferences = .shared, stateStore: StateStore) {
+    init(preferences: Preferences = .shared, stateStore: StateStore, clipboard: NSPasteboard = .general) {
         self.preferences = preferences
         self.stateStore = stateStore
-        self.imageStore = ImageStore(directory: stateStore.imagesDirectoryURL)
+        self.imageStore = ImageStore(directory: stateStore.imagesDirectoryURL,
+                                     pendingImports: stateStore.pendingImageImports)
+        self.clipboard = clipboard
     }
 
     // MARK: - 生成
@@ -61,7 +64,8 @@ final class WindowManager {
                                               frame: frame,
                                               globalFontSize: globalFontSize,
                                               imageStore: imageStore,
-                                              preferences: preferences)
+                                              preferences: preferences,
+                                              clipboard: clipboard)
         controller.onClosed = { [weak self] controller in
             self?.handleClosed(controller)
         }

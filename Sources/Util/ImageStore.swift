@@ -30,10 +30,12 @@ final class ImageStore {
 
     private let directory: URL
     private let fileManager: FileManager
+    private let pendingImports: PendingImageImports?
 
-    init(directory: URL, fileManager: FileManager = .default) {
+    init(directory: URL, fileManager: FileManager = .default, pendingImports: PendingImageImports? = nil) {
         self.directory = directory
         self.fileManager = fileManager
+        self.pendingImports = pendingImports
     }
 
     func url(for reference: ImageReference) -> URL {
@@ -45,8 +47,14 @@ final class ImageStore {
         guard data.count <= Self.defaultImportLimits.maximumEncodedByteCount else {
             throw ImportError.encodedDataTooLarge
         }
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        try data.write(to: url(for: reference), options: .atomic)
+        pendingImports?.protect(reference)
+        do {
+            try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
+            try data.write(to: url(for: reference), options: .atomic)
+        } catch {
+            pendingImports?.release(reference)
+            throw error
+        }
     }
 
     func load(_ reference: ImageReference) -> Data? {
@@ -54,8 +62,31 @@ final class ImageStore {
                                   limits: Self.defaultImportLimits)
     }
 
+    /// Open while the window still owns the image. The handle keeps the original
+    /// inode readable even if a later close/replacement lets state GC unlink it.
+    /// Opening is cheap; the bounded read and encoding remain on the worker queue.
+    func openOriginal(_ reference: ImageReference) throws -> FileHandle {
+        let originalURL = url(for: reference)
+        try Self.validateRegularFile(at: originalURL, limits: Self.defaultImportLimits)
+        return try FileHandle(forReadingFrom: originalURL)
+    }
+
+    /// Consumes and closes the handle, including on read/size-limit failure.
+    static func readOriginal(from handle: FileHandle) throws -> Data {
+        defer { try? handle.close() }
+        let limit = defaultImportLimits.maximumEncodedByteCount
+        let data = try handle.read(upToCount: limit + 1) ?? Data()
+        guard data.count <= limit else { throw ImportError.encodedDataTooLarge }
+        return data
+    }
+
     func remove(_ reference: ImageReference) {
         try? fileManager.removeItem(at: url(for: reference))
+        pendingImports?.release(reference)
+    }
+
+    func didInstall(_ reference: ImageReference) {
+        pendingImports?.didInstall(reference)
     }
 
     // MARK: - 表示用画像

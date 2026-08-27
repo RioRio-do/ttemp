@@ -45,6 +45,28 @@ final class ImageStoreTests: XCTestCase {
         XCTAssertThrowsError(try ImageStore.validatedFileExtension(of: Data([0, 1, 2])))
     }
 
+    func test_書き出し準備後に原本を回収しても元のバイト列を読める() throws {
+        let reference = ImageReference(id: UUID(), fileExtension: "png")
+        let png = try onePixelPNG
+        try store.save(png, reference: reference)
+        let original = try store.openOriginal(reference)
+        store.remove(reference)
+        XCTAssertNil(store.load(reference), "The old path-based export loses this race")
+        XCTAssertEqual(try ImageStore.readOriginal(from: original), png)
+        XCTAssertThrowsError(try original.read(upToCount: 1), "The handle must be closed")
+    }
+
+    func test_書き出し準備後に原本が増大しても読込上限を守る() throws {
+        let reference = ImageReference(id: UUID(), fileExtension: "png")
+        try store.save(try onePixelPNG, reference: reference)
+        let original = try store.openOriginal(reference)
+        let writer = try FileHandle(forWritingTo: store.url(for: reference))
+        try writer.truncate(atOffset: UInt64(ImageStore.defaultImportLimits.maximumEncodedByteCount + 1))
+        try writer.close()
+        XCTAssertThrowsError(try ImageStore.readOriginal(from: original))
+        XCTAssertThrowsError(try original.read(upToCount: 1), "Failed reads must also close the handle")
+    }
+
     func test_小さい画像はファイルバックの表示画像として読める() throws {
         let png = try onePixelPNG
         let reference = ImageReference(id: UUID(), fileExtension: "png")
