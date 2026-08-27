@@ -461,7 +461,7 @@ CI は少なくとも次を行う。
 4. PRでも使い捨て自己署名証明書でUniversal Releaseを生成し、`scripts/test-release.sh`で実起動、ZIP往復、第三者library拒否、制約を外した負例、署名検証器の負例とローカルSparkle更新を検証する。本番秘密鍵は使わない。更新fixtureはloopbackのみで配信し、ログの文面ではなく起動通知を最大30秒待つ。
 5. 1〜4はmacOS 15 arm64 / Intel、macOS 26 arm64で行い、全成功を固定名`ビルドとテスト`で集約する。branch protectionのrequired context名を変更しない。
 6. Release workflowでは本番identityで再ビルドし、DMG/ZIP/appcastの存在・構造・署名情報と最終artifactの実起動を検証する。
-7. 日英リリースノートの形式と、生成・欠落・誤version・公開済みノート改変・再利用防止・merge時の採番を独立jobで検証する。このjobも`ビルドとテスト`の成功条件に含める。公開jobでは最新の公開済みReleaseに対するノート生成を必須とする。
+7. 日英リリースノートの形式と、生成・欠落・誤version・公開済みノート改変・再利用防止・merge時の採番、更新fixtureのDNS非依存の起動通知を独立jobで検証する。このjobも`ビルドとテスト`の成功条件に含める。公開jobでは最新の公開済みReleaseに対するノート生成を必須とする。
 
 ### 13.3 配布版の隔離診断
 

@@ -22,7 +22,7 @@ permissions:
 
 jobs:
   release_notes:
-    name: リリースノート
+    name: 配布スクリプト
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -32,6 +32,8 @@ jobs:
         run: |
           python3 scripts/release-notes.py check
           python3 -B -m unittest discover -s Tests/ReleaseNotes -v
+      - name: 更新fixtureの起動を検証
+        run: python3 -B -m unittest discover -s Tests/Distribution -v
 
   checks:
     name: 検証 (${{ matrix.os }})

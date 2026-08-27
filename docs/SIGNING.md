@@ -44,7 +44,7 @@ GitHub Actions（.github/workflows/ci.yml）がビルドから公開まで行う
 
 main へ push すると:
 
-1. macOS 15（Apple Silicon / Intel）とmacOS 26でunit testと署名済みRelease E2Eを実行する（PRでも本番鍵なしで実行）。日英ノートの形式・生成処理も独立jobで検証し、全成功を`ビルドとテスト`へ集約する
+1. macOS 15（Apple Silicon / Intel）とmacOS 26でunit testと署名済みRelease E2Eを実行する（PRでも本番鍵なしで実行）。日英ノートの形式・生成処理と、更新fixtureのDNS非依存の起動も独立jobで検証し、全成功を`ビルドとテスト`へ集約する
 2. 通れば、バージョンを採番: `<major.minor>.<mainのコミット数>`
    - major.minor は project.yml の `MARKETING_VERSION` の先頭2要素
    - コミット数は単調増加なので、`CURRENT_PROJECT_VERSION`（Sparkle の
