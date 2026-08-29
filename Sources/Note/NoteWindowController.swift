@@ -132,9 +132,12 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
         self.clipboard = clipboard
         window = NoteWindow(contentRect: frame)
 
-        let contentBounds = window.contentView?.bounds ?? NSRect(origin: .zero, size: frame.size)
+        let contentBounds = window.contentView?.convert(window.contentLayoutRect, from: nil)
+            ?? NSRect(origin: .zero, size: frame.size)
         scrollView = NSScrollView(frame: contentBounds)
-        scrollView.autoresizingMask = [.width, .height]
+        // タイトルバーを除く領域へ明示配置する。fullSizeContentView 全体に広げて
+        // 自動 inset に任せると、リサイズ後の sizeToFit で本文がタイトルバーへずれる。
+        scrollView.automaticallyAdjustsContentInsets = false
         scrollView.hasVerticalScroller = true
         scrollView.hasHorizontalScroller = false
         // レガシースクロールバー環境（マウス接続時など）でバーの出現により contentSize の
@@ -150,6 +153,11 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
         scrollView.backgroundColor = .textBackgroundColor
         scrollView.contentView.drawsBackground = true
         scrollView.contentView.backgroundColor = .textBackgroundColor
+        // NSScrollView / NSClipView の既定値は、サイズ変更時に既存layerを再利用する
+        // `.onSetNeedsDisplay`。ライブリサイズでは本文が一瞬引き伸ばされるため、
+        // clip viewを含め、各フレームの新しい大きさで描画する。
+        scrollView.layerContentsRedrawPolicy = .duringViewResize
+        scrollView.contentView.layerContentsRedrawPolicy = .duringViewResize
         scrollView.borderType = .noBorder
 
         textView = NoteTextView(frame: NSRect(origin: .zero, size: scrollView.contentSize))
@@ -166,10 +174,10 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
         textView.applyPlainTextConfiguration(fontSize: globalFontSize)
 
         scrollView.documentView = textView
-        window.contentView?.addSubview(scrollView)
 
         super.init()
 
+        installTextScrollView()
         window.delegate = self
         window.shortcutHandler = self
         textView.delegate = self
@@ -193,6 +201,7 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
                                                object: nil)
 
         applyFontSize()
+        updateTextViewMinimumHeight()
     }
 
     deinit {
@@ -201,8 +210,26 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
 
     // MARK: - テキストビューの追従
 
+    private func installTextScrollView() {
+        guard let contentView = window.contentView,
+              let layoutGuide = window.contentLayoutGuide else { return }
+        scrollView.frame = contentView.convert(window.contentLayoutRect, from: nil)
+        scrollView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(scrollView)
+        NSLayoutConstraint.activate([NSLayoutConstraint.Attribute.leading, .trailing, .top, .bottom].map {
+            NSLayoutConstraint(item: scrollView, attribute: $0, relatedBy: .equal,
+                               toItem: layoutGuide, attribute: $0, multiplier: 1, constant: 0)
+        })
+        // 再接続時は制約を確定してから、本文の下限高さを合わせる。
+        contentView.layoutSubtreeIfNeeded()
+    }
+
     @objc private func clipViewFrameChanged() {
         updateTextViewMinimumHeight()
+        guard window.inLiveResize else { return }
+        // NSClipViewは現行macOSでも無効領域を最小化する。上端を動かしたフレームで
+        // 直前の文字画像を流用させないよう、現在見えている本文全体を明示する。
+        textView.setNeedsDisplay(scrollView.documentVisibleRect)
     }
 
     /// テキストビューがクリップビュー全体を覆い続けるようにする。
@@ -212,7 +239,8 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
     /// 地肌になる。そこはテキストビューではないのでクリックしてもキャレットが立たず、
     /// `isMovableByWindowBackground` によってウィンドウのドラッグになってしまう。
     private func updateTextViewMinimumHeight() {
-        let height = scrollView.contentSize.height
+        // 通知の発生元である clip view の実際の可視高さを使う。
+        let height = scrollView.contentView.bounds.height
         // 再入防止も兼ねる（高さの変更が再びフレーム変化を起こしても2回目は素通り）
         guard textView.minSize.height != height else { return }
         textView.minSize = NSSize(width: 0, height: height)
@@ -618,9 +646,8 @@ final class NoteWindowController: NSObject, NSWindowDelegate, NSTextViewDelegate
         imageView?.image = nil
         imageView?.removeFromSuperview()
 
-        scrollView.frame = window.contentView?.bounds ?? scrollView.frame
         if scrollView.superview == nil {
-            window.contentView?.addSubview(scrollView)
+            installTextScrollView()
         }
         // 入れ替えた領域は明示的に描き直させる（画像のピクセルを残さない）
         window.contentView?.needsDisplay = true
