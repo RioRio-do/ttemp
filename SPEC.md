@@ -95,6 +95,7 @@ Ttemp は macOS 14 以降で動く、メニューバー常駐型の一時メモ�
 - タイトルバーは透明、タイトル文字は非表示、close ボタンを表示する。Dock から復帰できないため miniaturize と zoom は無効にする。
 - 背景は macOS の text background/text color に従い、ライト・ダーク双方で読めること。
 - テキスト領域には標準の垂直スクロールを提供する。
+- テキストのscroll viewは`contentLayoutGuide`に合わせ、タイトルバーの下へ配置する。自動content insetは使わず、scroll viewとclip viewはライブリサイズの各段階で再描画する。サイズ変更・検索バー開閉・画像削除後も本文がタイトルバーへ重なったり一瞬ずれたりしないこと。本文内側の余白は12 pt、編集ビューの最小高さは現在のclip viewに追従する。
 
 ### 3.5 閉じる導線とサイズ制約
 
@@ -476,6 +477,7 @@ CI は少なくとも次を行う。
 - 本体の`--self-test`は一意な一時state directory、専用UserDefaults suite、専用copy/paste用pasteboardを使う。既存メモ、一般クリップボード、ログイン項目を変更せず、TCC要求・event tap・ネットワーク更新を開始しない。
 - 明示的な診断モードに限りApplications制約と単一インスタンス制約を外し、通常のcontrollerでstatus item、日英メニュー、テキスト入力・paste・undo/redo・上限、文字サイズ・pin、画像import、状態保存復元、close時copy、最後のwindow後の常駐を検証する。成功markerと終了codeを両方要求し、外部watchdogを45秒にする。
 - 診断の直接呼び出しは入力イベントではないため、テキスト操作ごとのUndo境界を明示し、検証後は通常のイベント単位設定へ戻す。固定時間のsleepで操作を分離しない。
+- リサイズ回帰検査は独立した診断メモで長文の拡大・縮小、先頭のスクロール位置、短文の編集領域、検索バー開閉、画像モード中のサイズ変更後のテキスト復帰を確認する。本文領域が`contentLayoutRect`内に収まることを調べるが、実際のマウスドラッグの確認とは区別する。
 - 自動診断のstatus item検査は表示要求・画像・target・actionの構成チェックであり、OSによる実表示の検査ではない。`TTEMP_STATUS_ITEM_VISIBILITY_UNVERIFIED`を出力し、runtime成功markerとは区別する。署名済み実起動テストでも画面確認済みと報告しない。
 - `--probe-library PATH`は`--self-test`専用。実在する署名済み第三者dylibがOSのlibrary constraintで拒否されることを確認する。
 - `--isolated`は同じ隔離データで手動UI確認用の空メモを開く。通常のmain menuと言語変更経路を使い、login設定は専用defaults内だけで模擬する。アイコンへの左・右mouse-upの通常処理が両方完了したときだけ`TTEMP_STATUS_ITEM_INTERACTION_OK`を1回出力する。nil・keyboard・他mouseイベントや同じ側の繰り返しでは完了しない。このmarkerは操作の受信記録であり、画像の正しさの保証ではない。正常終了時に診断データを破棄する。
@@ -490,6 +492,7 @@ OS/TCC/AppKit UI 依存で unit test 化しにくい項目は release 前に実�
 - 左右 Shift の物理キー、JIS/US配列、Caps Lock、mouse混在。
 - 複数 display/Spaces、focus handoff、pin、空 windowの自動消滅。
 - text/image paste、Finder file URL、drag/drop、animated image、巨大画像。
+- 長文メモの上端・下端・左右端をドラッグして拡大・縮小し、本文がタイトルバーへずれず、操作終了時にも表示位置が跳ねないこと。短文、検索バー表示中、画像削除後にも確認する。
 - light/dark、日本語/英語、VoiceOver label、Retina menu thumbnail/AppIcon。
 - login item の enable、requires approval、disable。
 - Sparkle manual/automatic update と署名不一致の拒否。

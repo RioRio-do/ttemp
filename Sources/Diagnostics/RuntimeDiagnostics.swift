@@ -225,6 +225,8 @@ final class RuntimeDiagnostics {
         clipboard.setString("must not replace image", forType: .string)
         try check(!imageNote.handlePasteboard(clipboard, isDrop: false), "Image must reject text")
         try check(imageNote.mode == .image, "Rejected paste changed image")
+        guard let imageSnapshot = imageNote.snapshot else { throw Failure(description: "Missing image snapshot") }
+        try checkTextResizing(imageSnapshot: imageSnapshot)
 
         // Persist real windows, destroy them without copying, then restore from disk.
         let expected = manager.snapshot()
@@ -264,5 +266,79 @@ final class RuntimeDiagnostics {
         guard case .loaded(let empty) = diskStore.load() else { throw Failure(description: "Empty reload failed") }
         try check(empty.notes.isEmpty, "Closed notes were persisted")
         try check(statusItem.isConfigured, "Status item configuration lost after last window closed")
+    }
+
+    private func checkTextResizing(imageSnapshot: NoteSnapshot) throws {
+        let note = NoteWindowController(frame: NSRect(x: 100, y: 100, width: 480, height: 320),
+                                        imageStore: ImageStore(directory: stateStore.imagesDirectoryURL),
+                                        preferences: preferences, clipboard: clipboard)
+        note.isPinned = true
+        note.present(activating: false)
+        defer { note.closeWithoutCopying() }
+        guard let editor = textView(in: note.window.contentView),
+              let scrollView = editor.enclosingScrollView else {
+            throw Failure(description: "Missing text scroll view")
+        }
+        try check(scrollView.layerContentsRedrawPolicy == .duringViewResize,
+                  "Text scroll view must redraw while resizing")
+        try check(scrollView.contentView.layerContentsRedrawPolicy == .duringViewResize,
+                  "Text clip view must redraw while resizing")
+
+        // Grow/shrink through the point where the whole document fits, with the
+        // caret at the end as in normal typing. The title bar must never cover it.
+        editor.string = String(repeating: "あいうえお Resize test\n", count: 12)
+        editor.setSelectedRange(NSRange(location: (editor.string as NSString).length, length: 0))
+        editor.scroll(.zero)
+        for size in [NSSize(width: 480, height: 200), NSSize(width: 480, height: 600),
+                     NSSize(width: 300, height: 250), NSSize(width: 520, height: 600),
+                     NSSize(width: 480, height: 200)] {
+            note.window.setContentSize(size)
+            note.window.contentView?.layoutSubtreeIfNeeded()
+            note.windowDidEndLiveResize(Notification(name: NSWindow.didEndLiveResizeNotification,
+                                                     object: note.window))
+            try checkTextViewport(note, editor: editor, context: "Resize to \(size)")
+            try check(abs(scrollView.contentView.bounds.minY) < 0.5,
+                      "Resizing shifted the top of the document")
+        }
+
+        let find = NSMenuItem()
+        find.tag = NSTextFinder.Action.showFindInterface.rawValue
+        editor.performTextFinderAction(find)
+        note.window.contentView?.layoutSubtreeIfNeeded()
+        try check(scrollView.isFindBarVisible, "Find bar did not open")
+        try checkTextViewport(note, editor: editor, context: "Find bar")
+        scrollView.isFindBarVisible = false
+        editor.string = "Short note"
+        note.window.setContentSize(NSSize(width: 480, height: 600))
+        note.window.contentView?.layoutSubtreeIfNeeded()
+        note.windowDidEndLiveResize(Notification(name: NSWindow.didEndLiveResizeNotification,
+                                                 object: note.window))
+        try checkTextViewport(note, editor: editor, context: "Short note")
+        try check(abs(editor.frame.height - scrollView.contentView.bounds.height) < 0.5,
+                  "Short text does not fill the resized viewport")
+
+        // Reattaching the editor after image mode must restore the same layout,
+        // even if the window changed size while the editor was detached.
+        for height: CGFloat in [250, 550] {
+            editor.string = ""
+            try check(note.restore(from: imageSnapshot), "Could not install image resize fixture")
+            note.window.setContentSize(NSSize(width: 480, height: height))
+            note.removeImage()
+            note.window.contentView?.layoutSubtreeIfNeeded()
+            try checkTextViewport(note, editor: editor, context: "Image removal at height \(height)")
+            try check(abs(editor.frame.height - scrollView.contentView.bounds.height) < 0.5,
+                      "Image removal left an incorrectly sized text viewport")
+        }
+    }
+
+    private func checkTextViewport(_ note: NoteWindowController, editor: NoteTextView, context: String) throws {
+        guard let clipView = editor.enclosingScrollView?.contentView else {
+            throw Failure(description: "Missing text clip view")
+        }
+        let viewport = clipView.convert(clipView.bounds, to: nil)
+        try check(note.window.contentLayoutRect.insetBy(dx: -0.5, dy: -0.5).contains(viewport),
+                  "\(context): text viewport overlaps the title bar after resizing")
+        try check(editor.frame.height + 0.5 >= clipView.bounds.height,
+                  "\(context): text height \(editor.frame.height), minimum \(editor.minSize.height), viewport \(clipView.bounds.height)")
     }
 }
